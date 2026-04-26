@@ -3,12 +3,16 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import pool from './db';
 import axios from 'axios';
+import authRouter from './auth';
+
 
 dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use('/api/auth', authRouter);
+
 
 // 节点列表
 const NODES_META = [
