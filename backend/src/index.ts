@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import pool from './db';
 import axios from 'axios';
 import authRouter from './auth';
+import cron from 'node-cron';
 
 
 dotenv.config();
@@ -18,7 +19,7 @@ app.use('/api/auth', authRouter);
 const NODES_META = [
   { id: 'A1',  name: '天府大道-锦城大道路口' },
   { id: 'B2',  name: '益州大道-锦城大道路口' },
-  { id: 'C3',  name: '天府大道-府城大道路口' },
+  { id: 'C3',  name: '成华大道-杉板桥路口' },
   { id: 'D4',  name: '天府大道-华阳立交路口' },
   { id: 'E5',  name: '剑南大道-锦城大道路口' },
   { id: 'F6',  name: '益州大道-府城大道路口' },
@@ -208,7 +209,102 @@ app.get('/api/route/recommend', async (req, res) => {
   }
 });
 
+// CSV报表导出
+app.get('/api/report/export', async (req, res) => {
+  const { start, end, node_id } = req.query;
+  try {
+    let sql = `SELECT node_id, speed, congestion_status, collected_at
+               FROM traffic_flow WHERE 1=1`;
+    const params: any[] = [];
+
+    if (start) { sql += ' AND collected_at >= ?'; params.push(start); }
+    if (end)   { sql += ' AND collected_at <= ?'; params.push(end); }
+    if (node_id && node_id !== 'all') {
+      sql += ' AND node_id = ?'; params.push(node_id);
+    }
+    sql += ' ORDER BY collected_at DESC LIMIT 5000';
+
+    const [rows]: any = await pool.query(sql, params);
+
+    const STATUS: Record<number, string> = {
+      0: '未知', 1: '畅通', 2: '缓行', 3: '拥堵', 4: '严重拥堵'
+    };
+
+    const header = '路口编号,平均车速(km/h),拥堵状态,采集时间\n';
+    const body = rows.map((r: any) =>
+      `${r.node_id},${r.speed},${STATUS[r.congestion_status] || '未知'},${
+        new Date(r.collected_at).toLocaleString('zh')
+      }`
+    ).join('\n');
+
+    const csv = '\uFEFF' + header + body;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename=traffic_report_${Date.now()}.csv`);
+    res.send(csv);
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
+
+
+// 每5分钟自动触发一次预测
+cron.schedule('*/5 * * * *', async () => {
+  console.log(`[${new Date().toLocaleString('zh')}] 定时预测触发...`);
+  try {
+    const NODE_IDS = ['A1','B2','C3','D4','E5','F6','G7','H8','I9','J10'];
+
+    const [rows]: any = await pool.query(
+      `SELECT node_id, speed, collected_at
+       FROM traffic_flow
+       WHERE collected_at >= (
+         SELECT MAX(collected_at) - INTERVAL 15 MINUTE FROM traffic_flow
+       )
+       ORDER BY collected_at ASC`
+    );
+
+    const timeMap: Record<string, Record<string, number>> = {};
+    for (const row of rows) {
+      const t = new Date(row.collected_at).toISOString();
+      if (!timeMap[t]) timeMap[t] = {};
+      timeMap[t][row.node_id] = row.speed;
+    }
+
+    let window = Object.values(timeMap).slice(-12);
+
+    if (window.length < 12) {
+      const [latest]: any = await pool.query(
+        `SELECT node_id, speed FROM traffic_flow
+         WHERE collected_at = (SELECT MAX(collected_at) FROM traffic_flow)`
+      );
+      const fallback: Record<string, number> = {};
+      for (const r of latest) fallback[r.node_id] = r.speed;
+      while (window.length < 12) window.unshift({ ...fallback });
+    }
+
+    const flaskResp = await axios.post('http://localhost:5001/predict', { window });
+    const flaskData: any = flaskResp.data;
+
+    if (!flaskData.success) {
+      console.error('定时预测Flask返回错误:', flaskData.error);
+      return;
+    }
+
+    const predictions = flaskData.predictions;
+    const now = new Date();
+    const insertValues = NODE_IDS.map(nid => [nid, predictions[nid] ?? 0, now]);
+    await pool.query(
+      `INSERT INTO predictions (node_id, predicted_speed, predicted_at) VALUES ?`,
+      [insertValues]
+    );
+    console.log(`定时预测完成:`, predictions);
+  } catch (err) {
+    console.error('定时预测失败:', err);
+  }
+}, { timezone: 'Asia/Shanghai' });
+
+
 app.listen(PORT, () => {
   console.log(`后端服务运行在 http://localhost:${PORT}`);
 });

@@ -13,7 +13,7 @@ from datetime import datetime
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 # ─── 配置区 ────────────────────────────────────────────────
-AMAP_KEY = "8f8de88767ab92c5bcc0ef12f5a78f73"
+AMAP_KEY = "cf6e4c13a21e87292268de392362356a"
 
 DB_CONFIG = {
     "host": "localhost",
@@ -25,7 +25,7 @@ DB_CONFIG = {
 }
 
 # 采集间隔（秒），高德免费配额建议不低于60
-INTERVAL_SECONDS = 120
+INTERVAL_SECONDS = 300
 # ──────────────────────────────────────────────────────────
 
 logging.basicConfig(
@@ -39,7 +39,7 @@ log = logging.getLogger(__name__)
 NODES = [
     {"id": "A1",  "name": "天府大道-锦城大道路口",      "lng": 104.069093, "lat": 30.575761},
     {"id": "B2",  "name": "益州大道-锦城大道路口",      "lng": 104.059806, "lat": 30.574761},
-    {"id": "C3",  "name": "天府大道-府城大道路口",      "lng": 104.068268, "lat": 30.588043},
+    {"id": "C3",  "name": "成华大道-杉板桥路口",        "lng": 104.136395, "lat": 30.673074},
     {"id": "D4",  "name": "天府大道-华阳立交路口",      "lng": 104.067643, "lat": 30.598064},
     {"id": "E5",  "name": "剑南大道-锦城大道路口",      "lng": 104.047516, "lat": 30.575108},
     {"id": "F6",  "name": "益州大道-府城大道路口",      "lng": 104.060269, "lat": 30.589527},

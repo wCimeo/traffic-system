@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend
+  Tooltip, ResponsiveContainer
 } from 'recharts';
 import api from '../api';
 
@@ -73,60 +73,66 @@ export default function Dashboard() {
   const congested = latest.filter((r) => r.congestion_status >= 3).length;
 
   return (
-    <div className="p-8">
-      <h1 className="text-xl font-bold text-gray-800 mb-6">控制台总览</h1>
+    <div className="console-page">
+      <div className="page-head">
+        <div>
+          <h2 className="console-title">控制台总览</h2>
+          <p className="console-subtitle">汇总展示核心路口实时状态、历史车速趋势与最新预测结果。</p>
+        </div>
+        <div className="toolbar">
+          <select
+            className="console-select"
+            value={selectedNode}
+            onChange={(e) => setSelectedNode(e.target.value)}
+          >
+            {NODE_OPTIONS.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+          <button
+            onClick={triggerPredict}
+            disabled={predicting}
+            className="primary-btn"
+          >
+            {predicting ? '预测中...' : '触发预测'}
+          </button>
+        </div>
+      </div>
 
       {/* 统计卡片 */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="cards-grid">
         {[
           { label: '监控路口数', value: `${latest.length}`, unit: '个' },
           { label: '平均车速', value: avgSpeed, unit: 'km/h' },
           { label: '当前拥堵路口', value: `${congested}`, unit: '个' },
           { label: '数据来源', value: '高德API', unit: '实时' },
         ].map((card) => (
-          <div key={card.label} className="bg-white rounded-2xl p-5 shadow-sm">
-            <div className="text-sm text-gray-400 mb-2">{card.label}</div>
-            <div className="text-2xl font-bold text-gray-800">
+          <div key={card.label} className="metric-card">
+            <div className="metric-label">{card.label}</div>
+            <div className="metric-value">
               {card.value}
-              <span className="text-sm font-normal text-gray-400 ml-1">{card.unit}</span>
+              <span className="metric-unit">{card.unit}</span>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="content-grid">
         {/* 历史流量图 */}
-        <div className="col-span-2 bg-white rounded-2xl p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
+        <div className="console-card">
+          <div className="console-card-header">
             <div>
-              <div className="font-semibold text-gray-800">历史车速趋势</div>
-              <div className="text-xs text-gray-400 mt-0.5">最近24条采集记录</div>
-            </div>
-            <div className="flex items-center gap-3">
-              <select
-                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm outline-none"
-                value={selectedNode}
-                onChange={(e) => setSelectedNode(e.target.value)}
-              >
-                {NODE_OPTIONS.map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-              <button
-                onClick={triggerPredict}
-                disabled={predicting}
-                className="bg-emerald-500 hover:bg-emerald-600 text-white text-sm px-4 py-1.5 rounded-lg transition disabled:opacity-60"
-              >
-                {predicting ? '预测中...' : '触发预测'}
-              </button>
+              <div className="console-card-title">历史车速趋势</div>
+              <div className="mt-1 text-sm text-slate-500">最近24条采集记录，当前节点：{selectedNode}</div>
             </div>
           </div>
 
-          <ResponsiveContainer width="100%" height={260}>
+          <div className="console-card-body">
+          <ResponsiveContainer width="100%" height={300}>
             <LineChart data={history}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="time" tick={{ fontSize: 11 }} />
-              <YAxis unit="km/h" tick={{ fontSize: 11 }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
+              <XAxis dataKey="time" tick={{ fontSize: 11, fill: '#64748b' }} />
+              <YAxis unit="km/h" tick={{ fontSize: 11, fill: '#64748b' }} />
               <Tooltip formatter={(v: any) => [`${v} km/h`, '车速']} />
               <Line
                 type="monotone"
@@ -137,20 +143,24 @@ export default function Dashboard() {
               />
             </LineChart>
           </ResponsiveContainer>
+          </div>
         </div>
 
         {/* 各路口实时状态 */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm">
-          <div className="font-semibold text-gray-800 mb-4">各路口实时状态</div>
-          <div className="space-y-2 overflow-auto max-h-72">
+        <div className="console-card">
+          <div className="console-card-header">
+            <div className="console-card-title">各路口实时状态</div>
+          </div>
+          <div className="console-card-body">
+          <div className="list-stack max-h-72 overflow-auto pr-1">
             {latest.map((row) => {
               const s = STATUS_LABEL[row.congestion_status] || STATUS_LABEL[0];
               return (
                 <div key={row.node_id}
-                  className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50">
-                  <span className="text-sm font-medium text-gray-700">{row.node_id}</span>
-                  <span className="text-sm text-gray-500">{row.speed} km/h</span>
-                  <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                  className="status-row">
+                  <span className="text-sm font-semibold text-slate-800">{row.node_id}</span>
+                  <span className="text-sm text-slate-500">{row.speed} km/h</span>
+                  <span className="pill"
                     style={{ background: s.color + '20', color: s.color }}>
                     {s.label}
                   </span>
@@ -161,12 +171,12 @@ export default function Dashboard() {
 
           {/* 最新预测 */}
           {predictions.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-gray-100">
-              <div className="text-sm font-semibold text-gray-700 mb-2">最新预测结果</div>
+            <div className="mt-4 border-t border-[#e8eef2] pt-4">
+              <div className="mb-3 text-sm font-semibold text-slate-700">最新预测结果</div>
               <div className="space-y-1">
                 {predictions.slice(0, 5).map((p) => (
                   <div key={p.node_id}
-                    className="flex justify-between text-xs text-gray-500 px-2">
+                    className="flex justify-between rounded-md px-2 py-1 text-xs text-slate-500">
                     <span>{p.node_id}</span>
                     <span className="text-emerald-600 font-medium">
                       {p.predicted_speed} km/h
@@ -176,6 +186,7 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

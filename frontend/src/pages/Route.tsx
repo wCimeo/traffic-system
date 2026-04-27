@@ -4,7 +4,7 @@ import api from '../api';
 const NODE_META: Record<string, string> = {
   A1: '天府大道-锦城大道路口',
   B2: '益州大道-锦城大道路口',
-  C3: '天府大道-府城大道路口',
+  C3: '成华大道-杉板桥路口',
   D4: '天府大道-华阳立交路口',
   E5: '剑南大道-锦城大道路口',
   F6: '益州大道-府城大道路口',
@@ -50,60 +50,57 @@ export default function RoutePage() {
   };
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
+    <div className="console-page">
+      <div className="page-head">
         <div>
-          <h1 className="text-xl font-bold text-gray-800">智能路线推荐</h1>
-          <p className="text-sm text-gray-400 mt-0.5">
+          <h2 className="console-title">智能路线推荐</h2>
+          <p className="console-subtitle">
             基于当前各路口实时车速排序 · 最后更新：{lastUpdate || '--'}
           </p>
         </div>
         <button
           onClick={loadRoute}
           disabled={loading}
-          className="bg-emerald-500 hover:bg-emerald-600 text-white text-sm px-4 py-2 rounded-lg transition disabled:opacity-60"
+          className="primary-btn"
         >
           {loading ? '更新中...' : '刷新推荐'}
         </button>
       </div>
 
       {/* 说明卡片 */}
-      <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 mb-6 text-sm text-emerald-700">
+      <div className="info-banner">
         系统根据高德API采集的各路口当前平均车速进行排序，车速越高表示该路口通行状况越好。
         推荐优先选择排名靠前的路口通行。
       </div>
 
       {/* 推荐前三 */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="rank-grid">
         {top3.map((item, index) => {
           const level = getSpeedLevel(item.speed);
           return (
             <div key={item.node_id}
-              className="bg-white rounded-2xl p-5 shadow-sm border-2"
-              style={{ borderColor: index === 0 ? '#10b981' : '#f3f4f6' }}>
+              className={`rank-card ${index === 0 ? 'best' : ''}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold ${
-                    index === 0 ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-500'
-                  }`}>
+                  <div className="rank-badge">
                     {index + 1}
                   </div>
-                  <span className="font-bold text-gray-800">{item.node_id}</span>
+                  <span className="font-bold text-slate-900">{item.node_id}</span>
                 </div>
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                <span className="pill"
                   style={{ color: level.color, background: level.bg }}>
                   {level.label}
                 </span>
               </div>
-              <div className="text-sm text-gray-400 mb-3">{NODE_META[item.node_id]}</div>
+              <div className="mb-3 min-h-10 text-sm leading-5 text-slate-500">{NODE_META[item.node_id]}</div>
               <div className="flex items-end gap-1">
-                <span className="text-3xl font-bold text-gray-800">{item.speed}</span>
-                <span className="text-sm text-gray-400 mb-1">km/h</span>
+                <span className="text-3xl font-light text-slate-800">{item.speed}</span>
+                <span className="mb-1 text-sm text-slate-400">km/h</span>
               </div>
               <div className="mt-2 flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full"
                   style={{ background: STATUS_COLOR[item.congestion_status] }} />
-                <span className="text-xs text-gray-400">
+                  <span className="text-xs text-slate-400">
                   {STATUS_LABEL[item.congestion_status]}
                 </span>
               </div>
@@ -113,17 +110,16 @@ export default function RoutePage() {
       </div>
 
       {/* 其余路口 */}
-      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100">
-          <span className="text-sm font-medium text-gray-600">其余路口状态</span>
+      <div className="console-card table-card">
+        <div className="console-card-header pb-4">
+          <span className="console-card-title">其余路口状态</span>
         </div>
-        <table className="w-full">
+        <div className="table-wrap">
+        <table className="data-table">
           <thead>
-            <tr className="border-b border-gray-50">
+            <tr>
               {['排名', '路口', '路口名称', '当前车速', '拥堵状态', '通行建议'].map((h) => (
-                <th key={h} className="text-left text-xs text-gray-400 font-medium px-5 py-3">
-                  {h}
-                </th>
+                <th key={h}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -131,23 +127,22 @@ export default function RoutePage() {
             {rest.map((item, index) => {
               const level = getSpeedLevel(item.speed);
               return (
-                <tr key={item.node_id}
-                  className="border-b border-gray-50 hover:bg-gray-50 transition">
-                  <td className="px-5 py-3 text-sm text-gray-400">{index + 4}</td>
-                  <td className="px-5 py-3 text-sm font-medium text-gray-700">{item.node_id}</td>
-                  <td className="px-5 py-3 text-sm text-gray-400">{NODE_META[item.node_id]}</td>
-                  <td className="px-5 py-3 text-sm font-medium text-gray-700">{item.speed} km/h</td>
-                  <td className="px-5 py-3">
+                <tr key={item.node_id}>
+                  <td className="text-slate-400">{index + 4}</td>
+                  <td className="font-medium text-slate-800">{item.node_id}</td>
+                  <td>{NODE_META[item.node_id]}</td>
+                  <td className="font-medium text-slate-800">{item.speed} km/h</td>
+                  <td>
                     <div className="flex items-center gap-1.5">
                       <div className="w-2 h-2 rounded-full"
                         style={{ background: STATUS_COLOR[item.congestion_status] }} />
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-slate-500">
                         {STATUS_LABEL[item.congestion_status]}
                       </span>
                     </div>
                   </td>
-                  <td className="px-5 py-3">
-                    <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                  <td>
+                    <span className="pill"
                       style={{ color: level.color, background: level.bg }}>
                       {level.label}
                     </span>
@@ -157,6 +152,7 @@ export default function RoutePage() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

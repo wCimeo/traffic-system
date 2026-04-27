@@ -4,7 +4,7 @@ import api from '../api';
 const NODE_META = [
   { id: 'A1',  name: '天府大道-锦城大道路口' },
   { id: 'B2',  name: '益州大道-锦城大道路口' },
-  { id: 'C3',  name: '天府大道-府城大道路口' },
+  { id: 'C3',  name: '成华大道-杉板桥路口' },
   { id: 'D4',  name: '天府大道-华阳立交路口' },
   { id: 'E5',  name: '剑南大道-锦城大道路口' },
   { id: 'F6',  name: '益州大道-府城大道路口' },
@@ -72,24 +72,24 @@ export default function Incidents() {
   const resolvedCount = incidents.filter((i) => i.status === 'resolved').length;
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
+    <div className="console-page">
+      <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-gray-800">突发事件监控</h1>
-          <p className="text-sm text-gray-400 mt-0.5">
+          <h2 className="console-title">突发事件监控</h2>
+          <p className="console-subtitle">
             处理中 {activeCount} 条 · 已解决 {resolvedCount} 条
           </p>
         </div>
         <button
           onClick={() => setShowForm(true)}
-          className="bg-emerald-500 hover:bg-emerald-600 text-white text-sm px-4 py-2 rounded-lg transition"
+          className="primary-btn"
         >
           + 上报事件
         </button>
       </div>
 
       {/* 统计卡片 */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="stats-grid">
         {[
           { label: '全部事件', value: incidents.length, key: 'all' },
           { label: '处理中', value: activeCount, key: 'active' },
@@ -98,28 +98,25 @@ export default function Incidents() {
           <div
             key={card.key}
             onClick={() => setFilter(card.key as any)}
-            className={`bg-white rounded-2xl p-5 shadow-sm cursor-pointer transition border-2 ${
-              filter === card.key ? 'border-emerald-400' : 'border-transparent'
-            }`}
+            className={`stat-card ${filter === card.key ? 'active' : ''}`}
           >
-            <div className="text-sm text-gray-400 mb-1">{card.label}</div>
-            <div className="text-2xl font-bold text-gray-800">{card.value}</div>
+            <div className="stat-label">{card.label}</div>
+            <div className="stat-value">{card.value}</div>
           </div>
         ))}
       </div>
 
       {/* 事件列表 */}
-      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+      <div className="console-card table-card">
         {filtered.length === 0 ? (
-          <div className="py-16 text-center text-gray-400 text-sm">暂无事件记录</div>
+          <div className="py-16 text-center text-sm text-slate-400">暂无事件记录</div>
         ) : (
-          <table className="w-full">
+          <div className="table-wrap">
+          <table className="data-table">
             <thead>
-              <tr className="border-b border-gray-100">
+              <tr>
                 {['路口', '类型', '描述', '严重程度', '状态', '上报时间', '操作'].map((h) => (
-                  <th key={h} className="text-left text-xs text-gray-400 font-medium px-5 py-3">
-                    {h}
-                  </th>
+                  <th key={h}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -128,29 +125,29 @@ export default function Incidents() {
                 const sev = SEVERITY_MAP[item.severity] || SEVERITY_MAP[1];
                 const sta = STATUS_MAP[item.status] || STATUS_MAP['active'];
                 return (
-                  <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50 transition">
-                    <td className="px-5 py-3 text-sm font-medium text-gray-700">{item.node_id}</td>
-                    <td className="px-5 py-3 text-sm text-gray-600">{item.type}</td>
-                    <td className="px-5 py-3 text-sm text-gray-500 max-w-xs truncate">{item.description}</td>
-                    <td className="px-5 py-3">
-                      <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                  <tr key={item.id}>
+                    <td className="font-medium text-slate-800">{item.node_id}</td>
+                    <td>{item.type}</td>
+                    <td className="max-w-xs truncate">{item.description}</td>
+                    <td>
+                      <span className="severity-pill"
                         style={{ color: sev.color, background: sev.bg }}>
                         {sev.label}
                       </span>
                     </td>
-                    <td className="px-5 py-3">
+                    <td>
                       <span className="text-xs font-medium" style={{ color: sta.color }}>
                         {sta.label}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-xs text-gray-400">
+                    <td className="text-xs text-slate-400">
                       {new Date(item.created_at).toLocaleString('zh')}
                     </td>
-                    <td className="px-5 py-3">
+                    <td>
                       {item.status === 'active' && (
                         <button
                           onClick={() => handleResolve(item.id)}
-                          className="text-xs text-emerald-600 hover:text-emerald-700 font-medium transition"
+                          className="rounded-md px-2 py-1 text-xs font-medium text-emerald-600 transition hover:bg-emerald-50 hover:text-emerald-700"
                         >
                           标记解决
                         </button>
@@ -161,21 +158,23 @@ export default function Incidents() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
       {/* 上报事件弹窗 */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-[480px] shadow-xl">
-            <h2 className="font-bold text-gray-800 mb-5">上报突发事件</h2>
+        <div className="modal-mask">
+          <div className="modal-card">
+            <div className="modal-header">上报突发事件</div>
 
-            <div className="space-y-4">
+            <div className="modal-body">
+            <div className="form-grid">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">路口</label>
+                  <label className="field-label">路口</label>
                   <select
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none"
+                    className="console-select"
                     value={form.node_id}
                     onChange={(e) => setForm({ ...form, node_id: e.target.value })}
                   >
@@ -185,9 +184,9 @@ export default function Incidents() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">事件类型</label>
+                  <label className="field-label">事件类型</label>
                   <select
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none"
+                    className="console-select"
                     value={form.type}
                     onChange={(e) => setForm({ ...form, type: e.target.value })}
                   >
@@ -197,7 +196,7 @@ export default function Incidents() {
               </div>
 
               <div>
-                <label className="block text-sm text-gray-500 mb-1">严重程度</label>
+                <label className="field-label">严重程度</label>
                 <div className="flex gap-3">
                   {Object.entries(SEVERITY_MAP).map(([k, v]) => (
                     <button
@@ -217,10 +216,10 @@ export default function Incidents() {
               </div>
 
               <div>
-                <label className="block text-sm text-gray-500 mb-1">事件描述</label>
+                <label className="field-label">事件描述</label>
                 <textarea
                   rows={3}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none resize-none"
+                  className="console-textarea"
                   placeholder="请描述事件详情..."
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
@@ -231,17 +230,18 @@ export default function Incidents() {
             <div className="flex gap-3 mt-5">
               <button
                 onClick={() => setShowForm(false)}
-                className="flex-1 border border-gray-200 text-gray-500 rounded-lg py-2 text-sm hover:bg-gray-50 transition"
+                className="ghost-btn flex-1"
               >
                 取消
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={submitting || !form.description.trim()}
-                className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg py-2 text-sm transition disabled:opacity-60"
+                className="primary-btn flex-1"
               >
                 {submitting ? '提交中...' : '确认上报'}
               </button>
+            </div>
             </div>
           </div>
         </div>

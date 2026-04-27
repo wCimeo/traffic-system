@@ -26,55 +26,57 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center"
-      style={{ background: 'linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 50%, #e0f2f1 100%)' }}>
-      <div className="flex w-[900px] gap-6">
+    <div className="login-page">
+      <div className="login-grid">
 
         {/* 左侧介绍卡片 */}
-        <div className="flex-1 bg-white rounded-2xl p-10 shadow-sm">
-          <div className="flex items-center gap-2 text-emerald-600 text-sm mb-6">
-            <span>🛡</span>
+        <div className="login-card login-intro">
+          <div className="mb-7 inline-flex items-center gap-2 rounded-md bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
+            <span>◆</span>
             <span>超级管理员登录入口</span>
           </div>
-          <h1 className="text-3xl font-bold text-gray-800 leading-tight mb-6">
+          <h1 className="mb-5 max-w-xl text-3xl font-black leading-tight tracking-tight text-slate-950 lg:text-4xl">
             基于大数据分析的智能交通流量监控与预测系统
           </h1>
-          <div className="grid grid-cols-2 gap-4">
+          <p className="mb-8 max-w-xl text-sm leading-7 text-slate-500">
+            面向城市路网运行态势监控、交通流量预测、突发事件管理与智能路线推荐的综合控制台。
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {[
               { title: '实时监控', desc: '高德API每分钟采集成都10个核心路口真实流量数据' },
               { title: '智能预测', desc: 'LST-GCN时空图卷积网络，预测未来路口车速趋势' },
               { title: '事件管理', desc: '突发事件实时录入、跟踪与状态更新' },
               { title: '路线推荐', desc: '基于当前拥堵状态的智能路线优先级推荐' },
             ].map((item) => (
-              <div key={item.title} className="bg-gray-50 rounded-xl p-4">
-                <div className="font-semibold text-gray-700 mb-1">{item.title}</div>
-                <div className="text-sm text-gray-400">{item.desc}</div>
+              <div key={item.title} className="console-card p-4 shadow-none">
+                <div className="mb-2 text-sm font-bold text-slate-800">{item.title}</div>
+                <div className="text-sm leading-6 text-slate-500">{item.desc}</div>
               </div>
             ))}
           </div>
         </div>
 
         {/* 右侧登录卡片 */}
-        <div className="w-[340px] bg-white rounded-2xl p-8 shadow-sm flex flex-col justify-center">
-          <div className="w-12 h-12 bg-emerald-500 rounded-xl flex items-center justify-center mb-6">
-            <span className="text-white text-xl">🔒</span>
+        <div className="login-card login-form">
+          <div className="mb-7 flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-lg shadow-emerald-200">
+            <span className="text-base">◆</span>
           </div>
-          <h2 className="text-xl font-bold text-gray-800 mb-1">登录系统</h2>
-          <p className="text-sm text-gray-400 mb-8">请输入超级管理员账号信息后进入控制台。</p>
+          <h2 className="mb-2 text-2xl font-black text-slate-950">登录系统</h2>
+          <p className="mb-8 text-sm text-slate-400">请输入超级管理员账号信息后进入控制台。</p>
 
           <div className="mb-4">
-            <label className="block text-sm text-gray-600 mb-1">用户名</label>
+            <label className="field-label">用户名</label>
             <input
-              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-emerald-400 transition"
+              className="console-input"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
             />
           </div>
-          <div className="mb-6">
-            <label className="block text-sm text-gray-600 mb-1">密码</label>
+          <div className="mb-5">
+            <label className="field-label">密码</label>
             <input
               type="password"
-              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-emerald-400 transition"
+              className="console-input"
               placeholder="请输入密码"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -83,7 +85,7 @@ export default function Login() {
           </div>
 
           {error && (
-            <div className="mb-4 text-sm text-red-500 bg-red-50 rounded-lg px-3 py-2">
+            <div className="alert-msg alert-error mb-4">
               {error}
             </div>
           )}
@@ -91,7 +93,7 @@ export default function Login() {
           <button
             onClick={handleLogin}
             disabled={loading}
-            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg py-3 text-sm font-medium transition disabled:opacity-60"
+            className="primary-btn w-full"
           >
             {loading ? '登录中...' : '→ 进入系统'}
           </button>

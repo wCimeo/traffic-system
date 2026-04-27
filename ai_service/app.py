@@ -106,7 +106,8 @@ def predict():
         with torch.no_grad():
             pred_norm = model(x, A_tensor)
 
-        pred = (pred_norm.squeeze().cpu().numpy() * MAX_VAL).tolist()
+        pred_raw = pred_norm.squeeze().cpu().numpy() * MAX_VAL
+        pred = np.clip(pred_raw, 0, MAX_VAL).tolist()
 
         result = {nid: round(float(v), 2) for nid, v in zip(NODE_IDS, pred)}
         return jsonify({'success': True, 'predictions': result})

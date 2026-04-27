@@ -11,7 +11,7 @@ declare global {
 const NODE_META = [
     {"id": "A1",  "name": "天府大道-锦城大道路口",      "lng": 104.069093, "lat": 30.575761},
     {"id": "B2",  "name": "益州大道-锦城大道路口",      "lng": 104.059806, "lat": 30.574761},
-    {"id": "C3",  "name": "天府大道-府城大道路口",      "lng": 104.068268, "lat": 30.588043},
+    {"id": "C3",  "name": "成华大道-杉板桥路口",        "lng": 104.136395, "lat": 30.673074},
     {"id": "D4",  "name": "天府大道-华阳立交路口",      "lng": 104.067643, "lat": 30.598064},
     {"id": "E5",  "name": "剑南大道-锦城大道路口",      "lng": 104.047516, "lat": 30.575108},
     {"id": "F6",  "name": "益州大道-府城大道路口",      "lng": 104.060269, "lat": 30.589527},
@@ -133,43 +133,63 @@ export default function MapView() {
   };
 
   return (
-    <div className="flex h-full">
+    <div className="console-page">
+      <div className="page-head">
+        <div>
+          <h2 className="console-title">实时路网地图</h2>
+          <p className="console-subtitle">
+            地图会读取最新路况数据，并用颜色标记当前拥堵状态。
+          </p>
+        </div>
+        <button
+          onClick={handleRefresh}
+          className="primary-btn"
+        >
+          刷新地图
+        </button>
+      </div>
+
+      <div className="map-shell">
       {/* 地图主体 */}
-      <div className="flex-1 flex flex-col p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-xl font-bold text-gray-800">实时路网地图</h1>
-            <p className="text-sm text-gray-400 mt-0.5">
-              点击路口节点查看详情 · 最后更新：{lastUpdate || '--'}
-            </p>
+      <div className="map-main">
+        <div className="cards-grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+          <div className="metric-card">
+            <div className="metric-label">当前区域</div>
+            <div className="text-sm font-semibold text-slate-800">中国四川成都</div>
           </div>
-          <button
-            onClick={handleRefresh}
-            className="bg-emerald-500 hover:bg-emerald-600 text-white text-sm px-4 py-2 rounded-lg transition"
-          >
-            刷新地图
-          </button>
+          <div className="metric-card">
+            <div className="metric-label">当前点位数</div>
+            <div className="text-sm font-semibold text-slate-800">{NODE_META.length} 个</div>
+          </div>
         </div>
 
         {/* 图例 */}
-        <div className="flex items-center gap-4 mb-3">
+        <div className="mb-4 flex flex-wrap items-center gap-5">
           {Object.entries(STATUS_LABEL).map(([k, v]) => (
             <div key={k} className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-full"
+              <div className="h-3 w-3 rounded-full"
                 style={{ background: STATUS_COLOR[Number(k)] }} />
-              <span className="text-xs text-gray-500">{v}</span>
+              <span className="text-xs font-medium text-slate-500">{v}</span>
             </div>
           ))}
         </div>
 
         {/* 地图容器 */}
-        <div ref={containerRef} className="flex-1 rounded-2xl overflow-hidden shadow-sm" />
+        <div ref={containerRef} className="map-container" />
       </div>
 
       {/* 右侧面板 */}
-      <div className="w-64 bg-white border-l border-gray-100 flex flex-col p-4">
-        <div className="font-semibold text-gray-800 mb-3">路口列表</div>
-        <div className="space-y-1.5 overflow-auto flex-1">
+      <div className="map-side">
+        <div className="mb-4 text-sm font-medium text-slate-500">地图操作</div>
+        <button
+          onClick={handleRefresh}
+          className="primary-btn mb-5 w-full"
+        >
+          刷新地图
+        </button>
+        <div className="mb-5 text-xs text-slate-400">最近更新时间：{lastUpdate || '--'}</div>
+        <div className="mb-3 font-semibold text-slate-900">路口列表</div>
+        <div className="min-h-0 flex-1 space-y-1.5 overflow-auto pr-1">
           {NODE_META.map((node) => {
             const record = latest.find((r) => r.node_id === node.id);
             const status = record?.congestion_status ?? 0;
@@ -177,15 +197,15 @@ export default function MapView() {
               <div
                 key={node.id}
                 onClick={() => setSelectedNode({ node, record })}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-50 transition"
+                className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 transition hover:bg-slate-50"
               >
-                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                <div className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
                   style={{ background: STATUS_COLOR[status] }} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-gray-700">{node.id}</div>
-                  <div className="text-xs text-gray-400 truncate">{node.name}</div>
+                  <div className="text-sm font-semibold text-slate-800">{node.id}</div>
+                  <div className="truncate text-xs text-slate-400">{node.name}</div>
                 </div>
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-slate-500">
                   {record ? `${record.speed}` : '--'}
                 </div>
               </div>
@@ -195,38 +215,39 @@ export default function MapView() {
 
         {/* 选中路口详情 */}
         {selectedNode && (
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <div className="font-semibold text-gray-800 mb-2">
+          <div className="mt-4 border-t border-[#e8eef2] pt-4">
+            <div className="mb-2 font-semibold text-slate-900">
               {selectedNode.node.id} 详情
             </div>
-            <div className="text-sm text-gray-500 mb-2">{selectedNode.node.name}</div>
+            <div className="mb-2 text-sm leading-5 text-slate-500">{selectedNode.node.name}</div>
             {selectedNode.record ? (
               <div className="space-y-1.5">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-400">当前车速</span>
-                  <span className="font-medium text-gray-700">
+                  <span className="text-slate-400">当前车速</span>
+                  <span className="font-medium text-slate-700">
                     {selectedNode.record.speed} km/h
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-400">拥堵状态</span>
+                  <span className="text-slate-400">拥堵状态</span>
                   <span className="font-medium"
                     style={{ color: STATUS_COLOR[selectedNode.record.congestion_status] }}>
                     {STATUS_LABEL[selectedNode.record.congestion_status]}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-400">采集时间</span>
-                  <span className="text-gray-500 text-xs">
+                  <span className="text-slate-400">采集时间</span>
+                  <span className="text-xs text-slate-500">
                     {new Date(selectedNode.record.collected_at).toLocaleTimeString('zh')}
                   </span>
                 </div>
               </div>
             ) : (
-              <div className="text-sm text-gray-400">暂无实时数据</div>
+              <div className="text-sm text-slate-400">暂无实时数据</div>
             )}
           </div>
         )}
+      </div>
       </div>
     </div>
   );
