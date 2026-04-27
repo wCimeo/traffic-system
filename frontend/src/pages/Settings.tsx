@@ -53,6 +53,18 @@ function ReportExport() {
         className="bg-emerald-500 hover:bg-emerald-600 text-white text-sm px-5 py-2 rounded-lg transition">
         导出 CSV
       </button>
+      <button
+        onClick={() => {
+          const params = new URLSearchParams();
+          if (nodeId) params.append('node_id', nodeId);
+          const token = localStorage.getItem('token');
+          window.open(
+            `http://localhost:3001/api/report/predict-export?${params.toString()}&token=${token}`
+          );
+        }}
+        className="ml-3 bg-blue-500 hover:bg-blue-600 text-white text-sm px-5 py-2 rounded-lg transition">
+        导出预测报表（15/30分钟）
+      </button>
     </div>
   );
 }

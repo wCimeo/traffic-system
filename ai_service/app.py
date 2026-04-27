@@ -115,6 +115,51 @@ def predict():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/predict/multistep', methods=['POST'])
+def predict_multistep():
+    """
+    多步预测：自动滚动推理，返回未来 horizon 步的预测结果
+    请求体：{ "window": [...12个时间步...], "steps": 2 }
+    返回：{ "predictions": [ {节点:速度}, {节点:速度} ] }  # steps个时间步
+    """
+    try:
+        body = request.get_json()
+        window = body.get('window', [])
+        steps  = int(body.get('steps', 2))  # 默认预测2步=30分钟
+
+        if len(window) != WINDOW_SIZE:
+            return jsonify({'success': False,
+                'error': f'需要{WINDOW_SIZE}个时间步，收到{len(window)}个'}), 400
+
+        results = []
+        current_window = [dict(step) for step in window]
+
+        for _ in range(steps):
+            arr = np.zeros((WINDOW_SIZE, len(NODE_IDS)), dtype=np.float32)
+            for t, step in enumerate(current_window):
+                for i, nid in enumerate(NODE_IDS):
+                    arr[t, i] = step.get(nid, 0.0)
+
+            arr_norm = arr / MAX_VAL
+            x = torch.FloatTensor(arr_norm).unsqueeze(0).unsqueeze(-1).to(device)
+
+            with torch.no_grad():
+                pred_norm = model(x, A_tensor)
+
+            pred_raw = pred_norm.squeeze().cpu().numpy() * MAX_VAL
+            pred_clipped = np.clip(pred_raw, 0, MAX_VAL)
+            step_result = {nid: round(float(v), 2)
+                           for nid, v in zip(NODE_IDS, pred_clipped)}
+            results.append(step_result)
+
+            # 滚动窗口：把这步预测结果作为下一步的输入
+            current_window = current_window[1:] + [step_result]
+
+        return jsonify({'success': True, 'predictions': results})
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'ok', 'nodes': NODE_IDS})
