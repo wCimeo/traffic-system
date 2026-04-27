@@ -13,7 +13,7 @@ from datetime import datetime
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 # ─── 配置区 ────────────────────────────────────────────────
-AMAP_KEY = "273d10f24e14e707fe4ff911fc528c2d"
+AMAP_KEY = "8f8de88767ab92c5bcc0ef12f5a78f73"
 
 DB_CONFIG = {
     "host": "localhost",
@@ -25,7 +25,7 @@ DB_CONFIG = {
 }
 
 # 采集间隔（秒），高德免费配额建议不低于60
-INTERVAL_SECONDS = 60
+INTERVAL_SECONDS = 120
 # ──────────────────────────────────────────────────────────
 
 logging.basicConfig(
