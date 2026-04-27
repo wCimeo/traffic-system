@@ -21,26 +21,26 @@ function ReportExport() {
   };
 
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-3">
+    <div className="form-grid">
+      <div className="grid grid-cols-3 gap-4">
         <div>
-          <label className="block text-sm text-gray-400 mb-1">开始时间</label>
+          <label className="field-label">开始时间</label>
           <input type="datetime-local"
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none"
+            className="console-input"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)} />
         </div>
         <div>
-          <label className="block text-sm text-gray-400 mb-1">结束时间</label>
+          <label className="field-label">结束时间</label>
           <input type="datetime-local"
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none"
+            className="console-input"
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)} />
         </div>
         <div>
-          <label className="block text-sm text-gray-400 mb-1">路口筛选</label>
+          <label className="field-label">路口筛选</label>
           <select
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none"
+            className="console-select"
             value={nodeId}
             onChange={(e) => setNodeId(e.target.value)}>
             <option value="all">全部路口</option>
@@ -48,23 +48,25 @@ function ReportExport() {
           </select>
         </div>
       </div>
-      <button
-        onClick={handleExport}
-        className="bg-emerald-500 hover:bg-emerald-600 text-white text-sm px-5 py-2 rounded-lg transition">
-        导出 CSV
-      </button>
-      <button
-        onClick={() => {
-          const params = new URLSearchParams();
-          if (nodeId) params.append('node_id', nodeId);
-          const token = localStorage.getItem('token');
-          window.open(
-            `http://localhost:3001/api/report/predict-export?${params.toString()}&token=${token}`
-          );
-        }}
-        className="ml-3 bg-blue-500 hover:bg-blue-600 text-white text-sm px-5 py-2 rounded-lg transition">
-        导出预测报表（15/30分钟）
-      </button>
+      <div className="flex flex-wrap gap-3 pt-1">
+        <button
+          onClick={handleExport}
+          className="primary-btn">
+          导出 CSV
+        </button>
+        <button
+          onClick={() => {
+            const params = new URLSearchParams();
+            if (nodeId) params.append('node_id', nodeId);
+            const token = localStorage.getItem('token');
+            window.open(
+              `http://localhost:3001/api/report/predict-export?${params.toString()}&token=${token}`
+            );
+          }}
+          className="ghost-btn">
+          导出预测报表（15/30分钟）
+        </button>
+      </div>
     </div>
   );
 }
@@ -101,7 +103,7 @@ export default function Settings() {
   };
 
   return (
-    <div className="console-page console-page-narrow">
+    <div className="console-page">
       <div className="page-head">
         <div>
           <h2 className="console-title">系统设置</h2>
@@ -109,96 +111,104 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* 账号信息 */}
-      <div className="console-card">
-        <div className="console-card-header">
-          <h3 className="console-card-title">账号信息</h3>
-        </div>
-        <div className="console-card-body">
-          <div className="kv-list">
-          {[
-            { label: '显示名称', value: user.displayName },
-            { label: '用户名', value: user.username },
-            { label: '角色', value: '超级管理员' },
-          ].map((item) => (
-            <div key={item.label} className="kv-row">
-              <span className="kv-label">{item.label}</span>
-              <span className="kv-value">{item.value}</span>
+      <div className="settings-grid">
+        {/* 账号信息 */}
+        <div className="console-card">
+          <div className="console-card-header">
+            <h3 className="console-card-title">账号信息</h3>
+          </div>
+          <div className="console-card-body">
+            <div className="kv-list">
+            {[
+              { label: '显示名称', value: user.displayName },
+              { label: '用户名', value: user.username },
+              { label: '角色', value: '超级管理员' },
+            ].map((item) => (
+              <div key={item.label} className="kv-row">
+                <span className="kv-label">{item.label}</span>
+                <span className="kv-value">{item.value}</span>
+              </div>
+            ))}
             </div>
-          ))}
+          </div>
+        </div>
+
+        {/* 修改密码 */}
+        <div className="console-card">
+          <div className="console-card-header">
+            <h3 className="console-card-title">修改密码</h3>
+          </div>
+          <div className="console-card-body">
+          <div className="form-grid">
+            {[
+              { label: '当前密码', key: 'oldPassword', type: 'password' },
+              { label: '新密码', key: 'newPassword', type: 'password' },
+              { label: '确认新密码', key: 'confirm', type: 'password' },
+            ].map((field) => (
+              <div key={field.key}>
+                <label className="field-label">{field.label}</label>
+                <input
+                  type={field.type}
+                  className="console-input"
+                  value={pwForm[field.key as keyof typeof pwForm]}
+                  onChange={(e) => setPwForm({ ...pwForm, [field.key]: e.target.value })}
+                />
+              </div>
+            ))}
+          </div>
+
+          {pwMsg && (
+            <div className={`alert-msg ${pwMsg.ok ? 'alert-ok' : 'alert-error'}`}>
+              {pwMsg.text}
+            </div>
+          )}
+
+          <button
+            onClick={handleChangePassword}
+            disabled={pwLoading}
+            className="primary-btn mt-4"
+          >
+            {pwLoading ? '提交中...' : '确认修改'}
+          </button>
           </div>
         </div>
       </div>
 
-      {/* 修改密码 */}
-      <div className="console-card">
-        <div className="console-card-header">
-          <h3 className="console-card-title">修改密码</h3>
-        </div>
-        <div className="console-card-body">
-        <div className="form-grid">
-          {[
-            { label: '当前密码', key: 'oldPassword', type: 'password' },
-            { label: '新密码', key: 'newPassword', type: 'password' },
-            { label: '确认新密码', key: 'confirm', type: 'password' },
-          ].map((field) => (
-            <div key={field.key}>
-              <label className="field-label">{field.label}</label>
-              <input
-                type={field.type}
-                className="console-input"
-                value={pwForm[field.key as keyof typeof pwForm]}
-                onChange={(e) => setPwForm({ ...pwForm, [field.key]: e.target.value })}
-              />
-            </div>
-          ))}
-        </div>
-
-        {pwMsg && (
-          <div className={`alert-msg ${pwMsg.ok ? 'alert-ok' : 'alert-error'}`}>
-            {pwMsg.text}
+      <div className="settings-grid mt-5">
+        {/* 系统信息 */}
+        <div className="console-card">
+          <div className="console-card-header">
+            <h3 className="console-card-title">系统信息</h3>
           </div>
-        )}
-
-        <button
-          onClick={handleChangePassword}
-          disabled={pwLoading}
-          className="primary-btn mt-4"
-        >
-          {pwLoading ? '提交中...' : '确认修改'}
-        </button>
-        </div>
-      </div>
-
-      {/* 系统信息 */}
-      <div className="console-card">
-        <div className="console-card-header">
-          <h3 className="console-card-title">系统信息</h3>
-        </div>
-        <div className="console-card-body">
-          <div className="kv-list">
-          {[
-            { label: '系统名称', value: '智能交通流量监控与预测系统' },
-            { label: '数据来源', value: '高德地图交通API' },
-            { label: '监控路口', value: '成都天府新区 10个核心路口' },
-            { label: '采集频率', value: '每60秒采集一次' },
-            { label: '预测模型', value: 'LST-GCN 时空图卷积网络' },
-            { label: '后端服务', value: 'Express · localhost:3001' },
-            { label: '推理服务', value: 'Flask · localhost:5001' },
-          ].map((item) => (
-            <div key={item.label} className="kv-row">
-              <span className="kv-label">{item.label}</span>
-              <span className="kv-value">{item.value}</span>
+          <div className="console-card-body">
+            <div className="kv-list">
+            {[
+              { label: '系统名称', value: '智能交通流量监控与预测系统' },
+              { label: '数据来源', value: '高德地图交通API' },
+              { label: '监控路口', value: '成都天府新区 10个核心路口' },
+              { label: '采集频率', value: '每300秒采集一次' },
+              { label: '预测模型', value: 'LST-GCN 时空图卷积网络' },
+              { label: '后端服务', value: 'Express · localhost:3001' },
+              { label: '推理服务', value: 'Flask · localhost:5001' },
+            ].map((item) => (
+              <div key={item.label} className="kv-row">
+                <span className="kv-label">{item.label}</span>
+                <span className="kv-value">{item.value}</span>
+              </div>
+            ))}
             </div>
-          ))}
           </div>
         </div>
-      </div>
 
-      {/* 报表导出 */}
-      <div className="bg-white rounded-2xl p-6 shadow-sm mt-6">
-        <h2 className="font-semibold text-gray-700 mb-4">报表导出</h2>
-        <ReportExport />
+        {/* 报表导出 */}
+        <div className="console-card">
+          <div className="console-card-header">
+            <h3 className="console-card-title">报表导出</h3>
+          </div>
+          <div className="console-card-body">
+            <ReportExport />
+          </div>
+        </div>
       </div>
     </div>
   );

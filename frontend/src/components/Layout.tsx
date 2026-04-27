@@ -1,12 +1,18 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import type { ReactElement } from 'react';
+import consoleIcon from '@/assets/console.png';
+import mapIcon from '@/assets/map.png';
+import monitorIcon from '@/assets/monitor.png';
+import recommendIcon from '@/assets/recommend.png';
+import settingIcon from '@/assets/setting.png';
+import trafficIcon from '@/assets/traffic.png';
 
 const navItems = [
-  { path: '/dashboard', label: '控制台总览', icon: '▥' },
-  { path: '/map', label: '实时路网地图', icon: '□' },
-  { path: '/incidents', label: '突发事件监控', icon: '△' },
-  { path: '/route', label: '智能路线推荐', icon: '↗' },
-  { path: '/settings', label: '系统设置', icon: '⚙' },
+  { path: '/dashboard', label: '控制台总览', icon: consoleIcon },
+  { path: '/map', label: '实时路网地图', icon: mapIcon },
+  { path: '/incidents', label: '突发事件监控', icon: monitorIcon },
+  { path: '/route', label: '智能路线推荐', icon: recommendIcon },
+  { path: '/settings', label: '系统设置', icon: settingIcon },
 ];
 
 const pageTitles: Record<string, string> = {
@@ -33,9 +39,14 @@ export default function Layout({ children }: { children: ReactElement }) {
       {/* 侧边栏 */}
       <aside className="flex w-[304px] shrink-0 flex-col border-r border-[#e8eef2] bg-white px-5 py-6">
         <div className="mb-10 flex min-h-16 items-center gap-4 px-1">
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500 text-base font-bold text-white shadow-lg shadow-emerald-100">◆</span>
+          <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#e8eef2] bg-white shadow-lg shadow-emerald-100">
+            <img src={trafficIcon} alt="" className="h-9 w-9 object-contain" />
+          </span>
           <div className="min-w-0">
-            <div className="truncate text-2xl font-bold leading-8 text-slate-900">智能交通系统</div>
+            <div className="text-2xl font-bold leading-8 text-slate-900">
+              <div>智能交通流量</div>
+              <div>监控与预测系统</div>
+            </div>
             <div className="text-base font-medium leading-6 text-emerald-600">Traffic Console</div>
           </div>
         </div>
@@ -60,7 +71,11 @@ export default function Layout({ children }: { children: ReactElement }) {
                       ? 'bg-white text-emerald-600 shadow-sm'
                       : 'bg-slate-50 text-slate-400 group-hover:bg-white group-hover:text-slate-700'
                   }`}>
-                    {item.icon}
+                    <img
+                      src={item.icon}
+                      alt=""
+                      className="h-5 w-5 object-contain"
+                    />
                   </span>
                   <span className="truncate">{item.label}</span>
                 </>
@@ -94,7 +109,7 @@ export default function Layout({ children }: { children: ReactElement }) {
       {/* 主内容区 */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-[#e8eef2] bg-white px-7">
-          <h1 className="text-base font-semibold text-slate-900">{pageTitles[location.pathname] || '智能交通系统'}</h1>
+          <h1 className="text-base font-semibold text-slate-900">{pageTitles[location.pathname] || '智能交通流量监控与预测系统'}</h1>
         </header>
         <main className="min-h-0 min-w-0 flex-1 overflow-auto bg-[#f6faf8]">
           {children}
