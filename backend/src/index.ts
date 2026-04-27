@@ -5,6 +5,7 @@ import pool from './db';
 import axios from 'axios';
 import authRouter from './auth';
 import cron from 'node-cron';
+import redis from './redis';
 
 
 dotenv.config();
@@ -37,17 +38,27 @@ app.get('/api/health', (req, res) => {
 // 获取最新一轮各路口路况
 app.get('/api/traffic/latest', async (req, res) => {
   try {
+    // 先查Redis缓存
+    const cached = await redis.get('traffic:latest').catch(() => null);
+    if (cached) {
+      return res.json({ success: true, data: JSON.parse(cached), source: 'cache' });
+    }
+
+    // 缓存未命中，查MySQL
     const [rows] = await pool.query(`
       SELECT t.node_id, t.speed, t.congestion_status, t.collected_at
       FROM traffic_flow t
       INNER JOIN (
         SELECT node_id, MAX(collected_at) as max_time
-        FROM traffic_flow
-        GROUP BY node_id
+        FROM traffic_flow GROUP BY node_id
       ) latest ON t.node_id = latest.node_id AND t.collected_at = latest.max_time
       ORDER BY t.node_id
     `);
-    res.json({ success: true, data: rows });
+
+    // 写入Redis，缓存70秒（略长于采集间隔60秒）
+    await redis.setex('traffic:latest', 70, JSON.stringify(rows)).catch(() => null);
+
+    res.json({ success: true, data: rows, source: 'db' });
   } catch (err) {
     res.status(500).json({ success: false, error: String(err) });
   }

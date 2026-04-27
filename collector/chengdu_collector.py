@@ -118,7 +118,6 @@ def save_to_db(conn, record: dict):
 
 
 def collect_once():
-    """采集一轮（10个路口），写入数据库"""
     log.info("开始采集...")
     try:
         conn = pymysql.connect(**DB_CONFIG)
@@ -127,20 +126,43 @@ def collect_once():
         return
 
     success = 0
+    successful_records = []
+
     for node in NODES:
         record = fetch_traffic(node)
         if record:
             try:
                 save_to_db(conn, record)
+                successful_records.append({
+                    'node_id': record['node_id'],
+                    'speed': record['speed'],
+                    'congestion_status': record['status'],
+                    'collected_at': record['timestamp'].isoformat(),
+                })
                 success += 1
                 log.info(f"  {node['id']} speed={record['speed']}km/h status={record['status']}")
             except Exception as e:
                 log.error(f"  {node['id']} 写库失败: {e}")
-        time.sleep(0.3)  # 避免高频触发限流
+        time.sleep(0.3)
 
     conn.close()
+
+    # 更新Redis缓存
+    if successful_records:
+        update_redis_cache(successful_records)
+
     log.info(f"本轮采集完成 {success}/{len(NODES)} 个路口成功")
 
+def update_redis_cache(records: list):
+    """把最新一轮采集结果写入Redis缓存"""
+    try:
+        import redis as redis_client
+        r = redis_client.Redis(host='localhost', port=6379, decode_responses=True)
+        cache_data = json.dumps(records, default=str)
+        r.setex('traffic:latest', 70, cache_data)
+        log.info("Redis缓存已更新")
+    except Exception as e:
+        log.warning(f"Redis缓存更新失败（不影响采集）: {e}")
 
 def init_table():
     """首次运行时建表（如果表不存在）"""
