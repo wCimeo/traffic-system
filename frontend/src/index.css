@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -24,6 +25,16 @@
   body {
     @apply bg-slate-50 text-slate-900 font-sans antialiased selection:bg-brand-100 selection:text-brand-700;
     overflow-x: hidden;
+    transition: background-color 200ms ease, color 200ms ease;
+  }
+
+  :root[data-theme='dark'] body {
+    background-color: #020617;
+    color: #e2e8f0;
+  }
+
+  :root[data-theme='dark'] #root {
+    background-color: #020617;
   }
 
   .amap-container,
@@ -50,7 +61,7 @@
 
 @layer components {
   .console-card {
-    @apply bg-white rounded-3xl border border-slate-100 shadow-soft overflow-hidden transition-all duration-300;
+    @apply bg-white rounded-3xl border border-slate-100 shadow-soft overflow-hidden transition-all duration-300 dark:bg-slate-900 dark:border-slate-800;
   }
   
   .console-card-hover {
@@ -58,7 +69,7 @@
   }
   
   .metric-card {
-    @apply bg-white rounded-3xl p-6 border border-slate-100 shadow-soft transition-all duration-300 hover:shadow-md hover:translate-y-[-2px];
+    @apply bg-white rounded-3xl p-6 border border-slate-100 shadow-soft transition-all duration-300 hover:shadow-md hover:translate-y-[-2px] dark:bg-slate-900 dark:border-slate-800;
   }
   
   .status-badge {
@@ -66,16 +77,107 @@
   }
   
   .input-base {
-    @apply w-full h-11 px-4 bg-slate-50 border-none rounded-xl text-sm transition-all focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:outline-none placeholder:text-slate-400 font-medium;
+    @apply w-full h-11 px-4 bg-slate-50 border-none rounded-xl text-sm transition-all focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:outline-none placeholder:text-slate-400 font-medium dark:bg-slate-900 dark:text-slate-100 dark:focus:bg-slate-900 dark:placeholder:text-slate-500;
   }
   
   .btn-primary {
-    @apply inline-flex items-center justify-center h-11 px-6 rounded-xl bg-slate-900 text-white text-sm font-semibold transition-all hover:bg-slate-800 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+    @apply inline-flex items-center justify-center h-11 px-6 rounded-xl bg-slate-900 text-white text-sm font-semibold transition-all hover:bg-slate-800 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none dark:bg-brand-600 dark:hover:bg-brand-500;
   }
   
   .btn-ghost {
-    @apply inline-flex items-center justify-center h-11 px-6 rounded-xl bg-slate-100 text-slate-600 text-sm font-semibold transition-all hover:bg-slate-200 active:scale-[0.98];
+    @apply inline-flex items-center justify-center h-11 px-6 rounded-xl bg-slate-100 text-slate-600 text-sm font-semibold transition-all hover:bg-slate-200 active:scale-[0.98] dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700;
   }
+}
+
+:root[data-theme='dark'] .console-card,
+:root[data-theme='dark'] .metric-card {
+  background-color: #0f172a !important;
+  border-color: #1e293b !important;
+  box-shadow: 0 1px 3px rgba(2, 6, 23, 0.3), 0 1px 2px rgba(2, 6, 23, 0.2) !important;
+}
+
+:root[data-theme='dark'] .input-base {
+  background-color: #0f172a !important;
+  color: #e2e8f0 !important;
+}
+
+:root[data-theme='dark'] .input-base::placeholder {
+  color: #64748b !important;
+}
+
+:root[data-theme='dark'] .btn-ghost {
+  background-color: #1e293b !important;
+  color: #e2e8f0 !important;
+}
+
+:root[data-theme='dark'] .bg-white,
+:root[data-theme='dark'] .bg-white\/80,
+:root[data-theme='dark'] .bg-white\/90,
+:root[data-theme='dark'] .bg-white\/92 {
+  background-color: #0f172a !important;
+}
+
+:root[data-theme='dark'] .bg-slate-50,
+:root[data-theme='dark'] .bg-slate-50\/50,
+:root[data-theme='dark'] .bg-slate-100 {
+  background-color: #111827 !important;
+}
+
+:root[data-theme='dark'] .bg-slate-900 {
+  background-color: #020617 !important;
+}
+
+:root[data-theme='dark'] .border-slate-50,
+:root[data-theme='dark'] .border-slate-100,
+:root[data-theme='dark'] .border-slate-200,
+:root[data-theme='dark'] .border-slate-200\/50,
+:root[data-theme='dark'] .border-slate-200\/60,
+:root[data-theme='dark'] .border-slate-100\/50,
+:root[data-theme='dark'] .ring-slate-100,
+:root[data-theme='dark'] .ring-slate-200\/50 {
+  border-color: #1e293b !important;
+  --tw-ring-color: #1e293b !important;
+}
+
+:root[data-theme='dark'] .text-slate-950,
+:root[data-theme='dark'] .text-slate-900,
+:root[data-theme='dark'] .text-slate-800,
+:root[data-theme='dark'] .text-slate-700 {
+  color: #f8fafc !important;
+}
+
+:root[data-theme='dark'] .text-slate-600,
+:root[data-theme='dark'] .text-slate-500 {
+  color: #cbd5e1 !important;
+}
+
+:root[data-theme='dark'] .text-slate-400,
+:root[data-theme='dark'] .text-slate-300 {
+  color: #94a3b8 !important;
+}
+
+:root[data-theme='dark'] .shadow-soft,
+:root[data-theme='dark'] .shadow-sm,
+:root[data-theme='dark'] .shadow-md,
+:root[data-theme='dark'] .shadow-lg,
+:root[data-theme='dark'] .shadow-xl,
+:root[data-theme='dark'] .shadow-2xl {
+  box-shadow: 0 10px 30px rgba(2, 6, 23, 0.35) !important;
+}
+
+:root[data-theme='dark'] select,
+:root[data-theme='dark'] input,
+:root[data-theme='dark'] textarea {
+  color: #e2e8f0;
+}
+
+:root[data-theme='dark'] aside,
+:root[data-theme='dark'] header {
+  background-color: rgba(15, 23, 42, 0.92) !important;
+}
+
+:root[data-theme='dark'] main {
+  background-color: #020617;
 }
 
 /* Custom transitions */
