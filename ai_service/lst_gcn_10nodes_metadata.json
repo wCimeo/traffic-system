@@ -16,7 +16,7 @@
   "hidden_dim": 64,
   "learning_rate": 0.005,
   "epochs": 100,
-  "max_val": 52.0,
+  "max_val": 56.880001068115234,
   "adjacency_matrix": [
     [
       1.0,
