@@ -8,6 +8,15 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  server: {
+    host: '0.0.0.0',
+    allowedHosts: [
+      'localhost',
+      '127.0.0.1',
+      '.localtest.me',
+      '.nip.io',
+    ],
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

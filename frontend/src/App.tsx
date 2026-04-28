@@ -1,59 +1,61 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import type { ReactElement } from 'react';
-import Login from './pages/Login';
+import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
-import MapView from './pages/MapView';
 import Incidents from './pages/Incidents';
+import MapView from './pages/MapView';
 import RoutePage from './pages/Route';
 import Settings from './pages/Settings';
-import Layout from './components/Layout';
+import Login from './pages/Login';
 
-function PrivateRoute({ children }: { children: ReactElement }) {
+const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
   const token = localStorage.getItem('token');
-  return token ? children : <Navigate to="/login" replace />;
-}
+  if (!token) return <Navigate to="/login" replace />;
+  return <Layout>{children}</Layout>;
+};
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        
         <Route path="/dashboard" element={
-          <PrivateRoute>
-            <Layout>
-              <Dashboard />
-            </Layout>
-          </PrivateRoute>
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
         } />
+        
         <Route path="/map" element={
-          <PrivateRoute>
-            <Layout>
-              <MapView />
-            </Layout>
-          </PrivateRoute>
+          <ProtectedRoute>
+            <MapView />
+          </ProtectedRoute>
         } />
+        
         <Route path="/incidents" element={
-          <PrivateRoute>
-            <Layout>
-              <Incidents />
-            </Layout>
-          </PrivateRoute>
+          <ProtectedRoute>
+            <Incidents />
+          </ProtectedRoute>
         } />
+        
         <Route path="/route" element={
-          <PrivateRoute>
-            <Layout>
-              <RoutePage />
-            </Layout>
-          </PrivateRoute>
+          <ProtectedRoute>
+            <RoutePage />
+          </ProtectedRoute>
         } />
+        
         <Route path="/settings" element={
-          <PrivateRoute>
-            <Layout>
-              <Settings />
-            </Layout>
-          </PrivateRoute>
+          <ProtectedRoute>
+            <Settings />
+          </ProtectedRoute>
         } />
-        <Route path="*" element={<Navigate to="/login" replace />} />
+
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
   );
