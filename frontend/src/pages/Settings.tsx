@@ -31,9 +31,17 @@ type CurrentUser = {
   lastLoginTime?: string | null;
   lastLoginIp?: string | null;
 };
+type ExportRecord = {
+  id: string;
+  type: string;
+  time: string;
+  scope: string;
+  range: string;
+};
 
 const SETTINGS_SECTION_KEY = 'traffic_settings_active_section';
 const SETTINGS_THEME_KEY = 'traffic_theme_mode';
+const EXPORT_HISTORY_KEY = 'traffic_export_history';
 const NODE_OPTIONS = ['all', 'A1', 'B2', 'C3', 'D4', 'E5', 'F6', 'G7', 'H8', 'I9', 'J10'];
 
 function getStoredSection(): SettingsSection {
@@ -49,6 +57,15 @@ function getSectionFromSearch(search: string): SettingsSection | null {
 function getStoredThemeMode(): ThemeMode {
   const stored = localStorage.getItem(SETTINGS_THEME_KEY);
   return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+}
+
+function getStoredExportHistory(): ExportRecord[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(EXPORT_HISTORY_KEY) || '[]');
+    return Array.isArray(stored) ? stored : [];
+  } catch {
+    return [];
+  }
 }
 
 function applyTheme(mode: ThemeMode) {
@@ -78,6 +95,7 @@ export default function Settings() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [nodeId, setNodeId] = useState('all');
+  const [exportHistory, setExportHistory] = useState<ExportRecord[]>(getStoredExportHistory);
   const [pwForm, setPwForm] = useState({ oldPassword: '', newPassword: '', confirm: '' });
   const [pwMsg, setPwMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [pwLoading, setPwLoading] = useState(false);
@@ -90,6 +108,10 @@ export default function Settings() {
   useEffect(() => {
     localStorage.setItem(SETTINGS_SECTION_KEY, activeSection);
   }, [activeSection]);
+
+  useEffect(() => {
+    localStorage.setItem(EXPORT_HISTORY_KEY, JSON.stringify(exportHistory.slice(0, 10)));
+  }, [exportHistory]);
 
   useEffect(() => {
     api.get('/api/auth/me')
@@ -153,7 +175,34 @@ export default function Settings() {
     if (endDate) params.append('end', endDate);
     if (nodeId) params.append('node_id', nodeId);
     const token = localStorage.getItem('token');
+    const scope = nodeId === 'all' ? '全部路口' : `路口 ${nodeId}`;
+    const range =
+      startDate || endDate
+        ? `${startDate || '开始不限'} ~ ${endDate || '结束不限'}`
+        : '全部历史时间';
+    setExportHistory((current) => [
+      { id: `${Date.now()}`, type: '历史 CSV 导出', time: new Date().toLocaleString('zh-CN'), scope, range },
+      ...current,
+    ].slice(0, 10));
     window.open(`http://localhost:3001/api/report/export?${params.toString()}&token=${token}`);
+  };
+
+  const handlePredictExport = () => {
+    const params = new URLSearchParams();
+    if (nodeId) params.append('node_id', nodeId);
+    const token = localStorage.getItem('token');
+    const scope = nodeId === 'all' ? '全部路口' : `路口 ${nodeId}`;
+    setExportHistory((current) => [
+      {
+        id: `${Date.now()}`,
+        type: '预测数据导出',
+        time: new Date().toLocaleString('zh-CN'),
+        scope,
+        range: '当前数据窗口 + 15/30 分钟预测',
+      },
+      ...current,
+    ].slice(0, 10));
+    window.open(`http://localhost:3001/api/report/predict-export?${params.toString()}&token=${token}`);
   };
 
   const navItems = [
@@ -305,6 +354,7 @@ export default function Settings() {
                     </div>
                   </div>
                 </div>
+
               </motion.div>
             )}
 
@@ -391,6 +441,7 @@ export default function Settings() {
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
+
               </motion.div>
             )}
 
@@ -433,10 +484,38 @@ export default function Settings() {
                 <div className="mt-6 rounded-[28px] bg-slate-50 p-6 ring-1 ring-slate-100">
                   <div className="mb-4 text-base font-black text-slate-900">导出说明</div>
                   <p className="text-sm leading-6 text-slate-500">CSV 会根据当前时间范围和路口筛选条件生成，适合离线分析、论文附录和二次清洗。</p>
-                  <button onClick={handleExport} className="btn-primary mt-5 gap-2">
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <button onClick={handleExport} className="btn-primary gap-2">
                     <Download className="h-4 w-4" />
                     <span>导出历史 CSV</span>
-                  </button>
+                    </button>
+                    <button onClick={handlePredictExport} className="btn-primary gap-2">
+                      <FileArchive className="h-4 w-4" />
+                      <span>导出预测数据</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-6 rounded-[28px] bg-slate-50 p-6 ring-1 ring-slate-100">
+                  <div className="mb-4 text-base font-black text-slate-900">最近导出记录</div>
+                  <div className="space-y-3">
+                    {exportHistory.length > 0 ? (
+                      exportHistory.slice(0, 5).map((record) => (
+                        <div key={record.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="text-sm font-black text-slate-900">{record.type}</div>
+                            <div className="text-xs font-semibold text-slate-400">{record.time}</div>
+                          </div>
+                          <div className="mt-2 text-xs font-medium text-slate-500">范围：{record.range}</div>
+                          <div className="mt-1 text-xs font-medium text-slate-500">目标：{record.scope}</div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-6 text-sm text-slate-400">
+                        暂无导出记录，执行一次导出后会显示在这里。
+                      </div>
+                    )}
+                  </div>
                 </div>
               </motion.div>
             )}
