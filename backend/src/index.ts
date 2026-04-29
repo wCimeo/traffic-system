@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import pool from './db';
 import axios from 'axios';
-import authRouter from './auth';
+import authRouter, { ensureUserTableMigration } from './auth';
 import cron from 'node-cron';
 import redis from './redis';
 
@@ -427,6 +427,13 @@ cron.schedule('*/5 * * * *', async () => {
 }, { timezone: 'Asia/Shanghai' });
 
 
-app.listen(PORT, () => {
-  console.log(`后端服务运行在 http://localhost:${PORT}`);
-});
+ensureUserTableMigration()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`后端服务运行在 http://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('用户表迁移失败，后端启动中止:', err);
+    process.exit(1);
+  });

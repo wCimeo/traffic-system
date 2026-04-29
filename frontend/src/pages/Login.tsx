@@ -1,181 +1,435 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Radio, Zap, Shield, Navigation, Terminal, ArrowRight, Lock, User } from 'lucide-react';
+import {
+  ArrowRight,
+  KeyRound,
+  Lock,
+  MessageSquareText,
+  Phone,
+  Radio,
+  RefreshCw,
+  ShieldCheck,
+  User,
+  Zap,
+} from 'lucide-react';
 import api from '../api';
 
+type LoginMode = 'password' | 'phone' | 'register';
+
+type CaptchaState = {
+  captchaId: string;
+  svg: string;
+};
+
 export default function Login() {
+  const [mode, setMode] = useState<LoginMode>('password');
   const [username, setUsername] = useState('admin_traffic');
   const [password, setPassword] = useState('');
+  const [registerUsername, setRegisterUsername] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+  const [registerConfirm, setRegisterConfirm] = useState('');
+  const [registerPhone, setRegisterPhone] = useState('');
+  const [phone, setPhone] = useState('');
+  const [smsCode, setSmsCode] = useState('');
+  const [captcha, setCaptcha] = useState('');
+  const [captchaData, setCaptchaData] = useState<CaptchaState | null>(null);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sendingSms, setSendingSms] = useState(false);
+  const [countdown, setCountdown] = useState(0);
   const navigate = useNavigate();
 
-  const handleLogin = async () => {
-    if (!password) { setError('鉴权密码不能为空'); return; }
+  const loadCaptcha = async () => {
+    const res = await api.get('/api/auth/captcha');
+    setCaptchaData({ captchaId: res.data.captchaId, svg: res.data.svg });
+    setCaptcha('');
+  };
+
+  useEffect(() => {
+    loadCaptcha().catch(() => setError('图形验证码加载失败，请检查后端服务'));
+  }, []);
+
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = window.setTimeout(() => setCountdown((current) => current - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [countdown]);
+
+  const persistLogin = (data: any) => {
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('user', JSON.stringify(data.user));
+    navigate(data.needSetPassword ? '/settings?section=password' : '/dashboard');
+  };
+
+  const handlePasswordLogin = async () => {
+    if (!username || !password || !captcha) {
+      setError('请填写账号、密码和图形验证码');
+      return;
+    }
+    if (!captchaData) return;
+
     setLoading(true);
     setError('');
+    setNotice('');
     try {
-      const res = await api.post('/api/auth/login', { username, password });
-      localStorage.setItem('token', res.data.token);
-      localStorage.setItem('user', JSON.stringify(res.data.user));
-      navigate('/dashboard');
+      const res = await api.post('/api/auth/login', {
+        username,
+        password,
+        captcha,
+        captchaId: captchaData.captchaId,
+      });
+      persistLogin(res.data);
     } catch (err: any) {
-      // Mock for demo
-      if (password === 'admin123' || password === '123456') {
-        localStorage.setItem('token', 'mock_token');
-        localStorage.setItem('user', JSON.stringify({ displayName: '高级指挥官', username: 'admin_traffic' }));
-        navigate('/dashboard');
-      } else {
-        setError('秘钥无效或核心服务响应超时');
-      }
+      setError(err.response?.data?.error || '登录失败，请稍后重试');
+      await loadCaptcha();
     } finally {
-      setTimeout(() => setLoading(false), 800);
+      setLoading(false);
+    }
+  };
+
+  const handleSendSms = async () => {
+    if (!phone || !captcha) {
+      setError('请先填写手机号和图形验证码');
+      return;
+    }
+    if (!captchaData) return;
+
+    setSendingSms(true);
+    setError('');
+    setNotice('');
+    try {
+      const res = await api.post('/api/auth/sms/send', {
+        phone,
+        captcha,
+        captchaId: captchaData.captchaId,
+      });
+      setNotice(res.data.message || '验证码已发送');
+      setCountdown(60);
+      await loadCaptcha();
+    } catch (err: any) {
+      setError(err.response?.data?.error || '验证码发送失败');
+      await loadCaptcha();
+    } finally {
+      setSendingSms(false);
+    }
+  };
+
+  const handlePhoneLogin = async () => {
+    if (!phone || !smsCode) {
+      setError('请填写手机号和短信验证码');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      const res = await api.post('/api/auth/phone-login', { phone, smsCode });
+      persistLogin(res.data);
+    } catch (err: any) {
+      setError(err.response?.data?.error || '登录失败，请稍后重试');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async () => {
+    if (!registerUsername || !registerPassword || !registerConfirm || !captcha) {
+      setError('请填写用户名、密码、确认密码和图形验证码');
+      return;
+    }
+    if (registerPassword !== registerConfirm) {
+      setError('两次输入的密码不一致');
+      return;
+    }
+    if (!captchaData) return;
+
+    setLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      const res = await api.post('/api/auth/register', {
+        username: registerUsername,
+        password: registerPassword,
+        confirmPassword: registerConfirm,
+        phone: registerPhone,
+        captcha,
+        captchaId: captchaData.captchaId,
+      });
+      persistLogin(res.data);
+    } catch (err: any) {
+      setError(err.response?.data?.error || '注册失败，请稍后重试');
+      await loadCaptcha();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submit = () => {
+    if (mode === 'password') {
+      handlePasswordLogin();
+    } else if (mode === 'phone') {
+      handlePhoneLogin();
+    } else {
+      handleRegister();
     }
   };
 
   return (
-    <div className="min-h-screen w-screen flex bg-slate-50 overflow-hidden font-sans">
-      {/* Left Pane - Branding & Stats */}
-      <div className="hidden lg:flex flex-col relative w-1/2 p-20 bg-slate-900 overflow-hidden">
-        {/* Abstract Background Decoration */}
-        <div className="absolute top-0 right-0 w-full h-full opacity-20 pointer-events-none">
-          <div className="absolute top-20 right-20 w-96 h-96 bg-brand-500 rounded-full blur-[120px] animate-pulse" />
-          <div className="absolute bottom-20 left-20 w-64 h-64 bg-emerald-400 rounded-full blur-[100px] opacity-40 delay-700 animate-pulse" />
+    <div className="flex min-h-screen w-screen overflow-hidden bg-slate-50 font-sans">
+      <div className="relative hidden w-1/2 flex-col overflow-hidden bg-slate-900 p-20 lg:flex">
+        <div className="pointer-events-none absolute inset-0 opacity-20">
+          <div className="absolute right-20 top-20 h-96 w-96 rounded-full bg-brand-500 blur-[120px]" />
+          <div className="absolute bottom-20 left-20 h-64 w-64 rounded-full bg-emerald-400 opacity-40 blur-[100px]" />
         </div>
-        
-        <motion.div 
+
+        <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.8 }}
           className="relative z-10"
         >
-          <div className="flex items-center gap-3 mb-16">
-            <div className="h-10 w-10 bg-brand-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-brand-500/20">
+          <div className="mb-16 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-white shadow-lg shadow-brand-500/20">
               <Radio className="h-6 w-6 stroke-[2.5px]" />
             </div>
-            <span className="text-xl font-black tracking-tighter text-white uppercase">Traffic Matrix</span>
+            <span className="text-xl font-black uppercase tracking-tighter text-white">Traffic Matrix</span>
           </div>
 
-          <h1 className="text-7xl font-black text-white tracking-tighter leading-[0.9] mb-8">
-            数字化运行<br/>
-            <span className="text-brand-500 italic">智脑</span>中心
+          <h1 className="mb-8 text-6xl font-black leading-[0.95] tracking-tight text-white">
+            安全身份认证
+            <br />
+            <span className="text-brand-500">统一入口</span>
           </h1>
-          
-          <p className="text-lg text-slate-400 font-medium max-w-md leading-relaxed mb-12">
-            面向未来的高感知交通态势管控平台。通过 <span className="text-white font-bold">LST-GCN</span> 深度建模，实现秒级路网流速演化预测。
+
+          <p className="mb-12 max-w-md text-lg font-medium leading-relaxed text-slate-400">
+            支持账号密码与手机验证码登录，图形验证码和 7 天免密凭证共同保护后台控制台。
           </p>
 
           <div className="grid grid-cols-2 gap-4">
             {[
-              { icon: Zap, label: '实时算力', desc: '1.2M TPS' },
-              { icon: Shield, label: '安全协议', desc: 'TLS v1.3' },
-              { icon: Navigation, label: '推荐引擎', desc: 'AI Vector' },
-              { icon: Terminal, label: '数据对齐', desc: 'Synchronized' },
-            ].map((item, idx) => (
-              <motion.div 
-                key={item.label}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 + idx * 0.1 }}
-                className="bg-white/5 border border-white/10 p-5 rounded-3xl"
-              >
-                <div className="flex items-center gap-2 mb-2">
+              { icon: ShieldCheck, label: '图形校验', desc: 'Captcha' },
+              { icon: MessageSquareText, label: '短信模拟', desc: 'Dev SMS' },
+              { icon: KeyRound, label: 'BCrypt', desc: 'Password Hash' },
+              { icon: Zap, label: '7 天免密', desc: 'Session Token' },
+            ].map((item) => (
+              <div key={item.label} className="rounded-3xl border border-white/10 bg-white/5 p-5">
+                <div className="mb-2 flex items-center gap-2">
                   <item.icon className="h-3 w-3 text-brand-400" />
                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{item.label}</span>
                 </div>
-                <div className="text-sm font-black text-white uppercase tracking-tight">{item.desc}</div>
-              </motion.div>
+                <div className="text-sm font-black uppercase tracking-tight text-white">{item.desc}</div>
+              </div>
             ))}
           </div>
         </motion.div>
-
-        <div className="mt-auto relative z-10 flex items-center justify-between">
-           <div className="flex items-center gap-4">
-              <div className="h-px w-12 bg-white/10" />
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 italic">系统核心版本 v4.2.0-企业级</span>
-           </div>
-           <div className="text-[10px] font-bold text-slate-600">© 2026 智能交通态势感知大脑</div>
-        </div>
       </div>
 
-      {/* Right Pane - Form */}
-      <div className="flex-1 flex items-center justify-center p-8 bg-white relative">
-        {/* Mobile BG Elements */}
-        <div className="lg:hidden absolute inset-0 overflow-hidden -z-10 opacity-30">
-           <div className="absolute top-0 right-0 w-64 h-64 bg-brand-200 rounded-full blur-[80px]" />
-           <div className="absolute bottom-0 left-0 w-48 h-48 bg-emerald-100 rounded-full blur-[60px]" />
-        </div>
-
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-sm"
-        >
-          <div className="mb-10 text-center lg:text-left">
-            <h2 className="text-3xl font-black text-slate-900 tracking-tight">操作员鉴权</h2>
-            <p className="text-slate-400 font-medium text-sm mt-2 uppercase tracking-wide">请输入核心授权秘钥以访问智脑系统</p>
+      <div className="relative flex flex-1 items-center justify-center bg-white p-8">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
+          <div className="mb-8">
+            <h2 className="text-3xl font-black tracking-tight text-slate-900">登录控制台</h2>
+            <p className="mt-2 text-sm font-medium text-slate-400">请选择一种身份验证方式</p>
           </div>
 
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">操作员身份代码</label>
-              <div className="relative group">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500 transition-colors">
-                  <User className="h-4 w-4 stroke-[2.5px]" />
+          <div className="mb-8 grid grid-cols-3 rounded-2xl bg-slate-100 p-1">
+            {[
+              { key: 'password' as LoginMode, label: '账号密码', icon: Lock },
+              { key: 'phone' as LoginMode, label: '手机验证码', icon: Phone },
+              { key: 'register' as LoginMode, label: '注册账号', icon: User },
+            ].map((item) => {
+              const active = mode === item.key;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => {
+                    setMode(item.key);
+                    setError('');
+                    setNotice('');
+                  }}
+                  className={`flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black transition-all ${
+                    active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <item.icon className="h-4 w-4" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="space-y-5">
+            {mode === 'password' ? (
+              <>
+                <div className="space-y-2">
+                  <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">用户名 / 手机号</label>
+                  <div className="group relative">
+                    <User className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
+                    <input
+                      className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="请输入用户名或手机号"
+                    />
+                  </div>
                 </div>
+
+                <div className="space-y-2">
+                  <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">登录密码</label>
+                  <div className="group relative">
+                    <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
+                    <input
+                      type="password"
+                      className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12"
+                      placeholder="请输入密码"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && submit()}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : mode === 'phone' ? (
+              <>
+                <div className="space-y-2">
+                  <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">手机号</label>
+                  <div className="group relative">
+                    <Phone className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
+                    <input
+                      className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="请输入 11 位手机号"
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">用户名</label>
+                  <div className="group relative">
+                    <User className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
+                    <input
+                      className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12"
+                      value={registerUsername}
+                      onChange={(e) => setRegisterUsername(e.target.value)}
+                      placeholder="4-32 位字母、数字或下划线"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">手机号（可选）</label>
+                  <div className="group relative">
+                    <Phone className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
+                    <input
+                      className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12"
+                      value={registerPhone}
+                      onChange={(e) => setRegisterPhone(e.target.value)}
+                      placeholder="用于后续验证码登录，可稍后绑定"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">密码</label>
+                    <div className="group relative">
+                      <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
+                      <input
+                        type="password"
+                        className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12"
+                        value={registerPassword}
+                        onChange={(e) => setRegisterPassword(e.target.value)}
+                        placeholder="至少 6 位"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">确认密码</label>
+                    <input
+                      type="password"
+                      className="input-base !h-14 border border-slate-100 bg-slate-50"
+                      value={registerConfirm}
+                      onChange={(e) => setRegisterConfirm(e.target.value)}
+                      placeholder="再次输入"
+                      onKeyDown={(e) => e.key === 'Enter' && submit()}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className="space-y-2">
+              <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">图形验证码</label>
+              <div className="flex gap-3">
                 <input
-                  className="input-base !h-14 pl-12 bg-slate-50 border border-slate-100 focus:border-brand-500/20"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="ID / 用户名"
+                  className="input-base !h-14 flex-1 border border-slate-100 bg-slate-50"
+                  value={captcha}
+                  onChange={(e) => setCaptcha(e.target.value)}
+                  placeholder="请输入验证码"
                 />
+                <button
+                  type="button"
+                  onClick={() => loadCaptcha()}
+                  className="flex h-14 w-36 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
+                  title="刷新验证码"
+                >
+                  {captchaData ? (
+                    <span dangerouslySetInnerHTML={{ __html: captchaData.svg }} />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 animate-spin text-slate-400" />
+                  )}
+                </button>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">安全令牌 (TOKEN)</label>
-              <div className="relative group">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500 transition-colors">
-                  <Lock className="h-4 w-4 stroke-[2.5px]" />
+            {mode === 'phone' && (
+              <div className="space-y-2">
+                <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">短信验证码</label>
+                <div className="flex gap-3">
+                  <input
+                    className="input-base !h-14 flex-1 border border-slate-100 bg-slate-50"
+                    value={smsCode}
+                    onChange={(e) => setSmsCode(e.target.value)}
+                    placeholder="6 位验证码"
+                    onKeyDown={(e) => e.key === 'Enter' && submit()}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSendSms}
+                    disabled={sendingSms || countdown > 0}
+                    className="btn-ghost h-14 w-32 shrink-0 disabled:pointer-events-none disabled:opacity-60"
+                  >
+                    {countdown > 0 ? `${countdown}s` : sendingSms ? '发送中' : '获取验证码'}
+                  </button>
                 </div>
-                <input
-                  type="password"
-                  className="input-base !h-14 pl-12 bg-slate-50 border border-slate-100 focus:border-brand-500/20 shadow-inner"
-                  placeholder="管理授权密码"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                />
               </div>
-            </div>
+            )}
 
             {error && (
-              <motion.div 
-                initial={{ opacity: 0, x: -10 }} 
-                animate={{ opacity: 1, x: 0 }}
-                className="bg-red-50 text-red-600 p-4 rounded-2xl text-xs font-bold border border-red-100 flex items-center gap-3"
-              >
-                <div className="h-5 w-5 bg-red-600 text-white rounded-full flex items-center justify-center shrink-0 text-[10px]">!</div>
-                {error}
-              </motion.div>
+              <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-600">{error}</div>
+            )}
+            {notice && (
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm font-bold text-emerald-700">
+                {notice}
+              </div>
             )}
 
             <button
-              onClick={handleLogin}
+              onClick={submit}
               disabled={loading}
-              className="btn-primary w-full !h-14 gap-3 shadow-2xl shadow-slate-900/20 group relative overflow-hidden"
+              className="btn-primary !h-14 w-full gap-3 shadow-2xl shadow-slate-900/20"
             >
-              <span className="relative z-10 uppercase tracking-widest font-black">
-                {loading ? '正在建立安全链路...' : '立即同步连接后台'}
+              <span className="font-black uppercase tracking-widest">
+                {loading ? '正在验证...' : mode === 'password' ? '账号密码登录' : mode === 'phone' ? '手机验证码登录 / 注册' : '创建账号并登录'}
               </span>
-              {!loading && <ArrowRight className="h-4 w-4 relative z-10 transition-transform group-hover:translate-x-1" />}
-              {loading && <div className="absolute inset-0 bg-brand-500/10 animate-pulse" />}
+              {!loading && <ArrowRight className="h-4 w-4" />}
             </button>
-            
-            <p className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
-              受保护的专用系统。任何未经授权的访问脚本都将被记录。
-            </p>
           </div>
         </motion.div>
       </div>
