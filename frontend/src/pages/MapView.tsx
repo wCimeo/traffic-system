@@ -17,6 +17,9 @@ if (typeof window !== 'undefined') {
 }
 
 const AMAP_KEY = '8943e8243755045a43fa3bf25bf42aef';
+const AMAP_SCRIPT_ID = 'amap-js-sdk';
+const AMAP_SCRIPT_URL = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}`;
+let amapSdkPromise: Promise<void> | null = null;
 
 const NODE_META = [
   { id: 'A1', name: '天府大道-锦城大道路口', lng: 104.069093, lat: 30.575761 },
@@ -65,7 +68,7 @@ const waitForContainerReady = (container: HTMLDivElement) =>
     ensureSize();
   });
 
-const loadAMapSdk = () =>
+const loadAMapSdkOnce = () =>
   new Promise<void>((resolve, reject) => {
     if (window.AMap) {
       resolve();
@@ -80,19 +83,49 @@ const loadAMapSdk = () =>
     }
 
     const script = document.createElement('script');
+    const timeout = window.setTimeout(() => {
+      script.remove();
+      reject(new Error('AMap script load timeout'));
+    }, 12000);
+
+    script.id = AMAP_SCRIPT_ID;
     script.type = 'text/javascript';
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}`;
+    script.src = AMAP_SCRIPT_URL;
     script.async = true;
     script.dataset.amapSdk = AMAP_KEY;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('AMap script failed to load'));
+    script.onload = () => {
+      window.clearTimeout(timeout);
+      resolve();
+    };
+    script.onerror = () => {
+      window.clearTimeout(timeout);
+      script.remove();
+      reject(new Error('AMap script failed to load'));
+    };
     document.head.appendChild(script);
   });
+
+const loadAMapSdk = async () => {
+  if (!amapSdkPromise) {
+    amapSdkPromise = loadAMapSdkOnce().catch(async (error) => {
+      amapSdkPromise = null;
+      document.getElementById(AMAP_SCRIPT_ID)?.remove();
+      await new Promise((resolve) => window.setTimeout(resolve, 800));
+      return loadAMapSdkOnce().catch(() => {
+        throw error;
+      });
+    });
+  }
+
+  await amapSdkPromise;
+};
 
 export default function MapView() {
   const mapRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const overlaysRef = useRef<any[]>([]);
+  const markersRef = useRef<Record<string, any>>({});
+  const latestRef = useRef<any[]>([]);
   const [latest, setLatest] = useState<any[]>([]);
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [lastUpdate, setLastUpdate] = useState('');
@@ -106,6 +139,7 @@ export default function MapView() {
       const res = await api.get('/api/traffic/latest');
       const data = res.data.data || [];
       setLatest(data);
+      latestRef.current = data;
       setLastUpdate(new Date().toLocaleTimeString('zh-CN'));
       return data;
     } catch (error) {
@@ -116,6 +150,7 @@ export default function MapView() {
         collected_at: new Date().toISOString(),
       }));
       setLatest(mock);
+      latestRef.current = mock;
       setLastUpdate(new Date().toLocaleTimeString('zh-CN'));
       return mock;
     } finally {
@@ -123,9 +158,40 @@ export default function MapView() {
     }
   };
 
+  const syncMarkerFocus = (nodeId?: string) => {
+    Object.entries(markersRef.current).forEach(([id, marker]) => {
+      const record = latestRef.current.find((row) => row.node_id === id);
+      const status = record?.congestion_status ?? 0;
+      const active = id === nodeId;
+      marker.setOptions?.({
+        radius: active ? 17 : 12,
+        strokeColor: active ? '#0f172a' : '#ffffff',
+        strokeWeight: active ? 4 : 2,
+        fillColor: STATUS_COLOR[status] ?? STATUS_COLOR[0],
+        zIndex: active ? 200 : 100,
+      });
+    });
+  };
+
+  const focusNode = (nodeId: string, data = latestRef.current) => {
+    const node = NODE_META.find((item) => item.id === nodeId);
+    if (!node) return;
+
+    const record = data.find((row) => row.node_id === nodeId);
+    setSelectedNode({ node, record });
+    syncMarkerFocus(nodeId);
+
+    const lng = getNumericCoordinate(node.lng);
+    const lat = getNumericCoordinate(node.lat);
+    if (mapRef.current && lng !== null && lat !== null) {
+      mapRef.current.setZoomAndCenter?.(14, [lng, lat], false, 500);
+    }
+  };
+
   const updateMarkers = (data: any[]) => {
     if (!mapRef.current || !window.AMap) return;
 
+    latestRef.current = data;
     const statusMap: Record<string, any> = {};
     data.forEach((row) => {
       statusMap[row.node_id] = row;
@@ -133,6 +199,7 @@ export default function MapView() {
 
     overlaysRef.current.forEach((overlay) => overlay.remove?.());
     overlaysRef.current = [];
+    markersRef.current = {};
 
     NODE_META.forEach((node) => {
       const record = statusMap[node.id];
@@ -153,12 +220,13 @@ export default function MapView() {
 
       const marker = new window.AMap.CircleMarker({
         center: [lng, lat],
-        radius: 12,
+        radius: selectedNode?.node.id === node.id ? 17 : 12,
         fillColor: color,
         fillOpacity: 0.9,
-        strokeColor: '#ffffff',
-        strokeWeight: 2,
+        strokeColor: selectedNode?.node.id === node.id ? '#0f172a' : '#ffffff',
+        strokeWeight: selectedNode?.node.id === node.id ? 4 : 2,
         cursor: 'pointer',
+        zIndex: selectedNode?.node.id === node.id ? 200 : 100,
         extData: { node, record },
       });
 
@@ -177,13 +245,16 @@ export default function MapView() {
       });
 
       marker.on('click', () => {
-        setSelectedNode({ node, record });
+        focusNode(node.id, data);
       });
 
       marker.setMap(mapRef.current);
       label.setMap(mapRef.current);
+      markersRef.current[node.id] = marker;
       overlaysRef.current.push(marker, label);
     });
+
+    mapRef.current.setFitView?.(Object.values(markersRef.current), false, [80, 80, 80, 80], 13);
   };
 
   useEffect(() => {
@@ -203,15 +274,29 @@ export default function MapView() {
         if (disposed) return;
 
         const map = new window.AMap.Map(containerRef.current, {
+          viewMode: '2D',
           zoom: 12,
-          center: [104.0695, 30.56],
-          mapStyle: 'amap://styles/whitesmoke',
+          center: [104.082, 30.592],
+          mapStyle: 'amap://styles/normal', // 使用高德提供的标准底图样式:normal/light/dark/fresh/graffiti/blue/wine/darkblue/whitesmok/grey/macaron
           resizeEnable: true,
+          showLabel: true,
+          features: ['bg', 'road', 'building'],
         });
 
         mapRef.current = map;
-        updateMarkers(data);
-        setMapStatus('ready');
+        let rendered = false;
+        const renderMapMarkers = () => {
+          if (disposed || rendered) return;
+          rendered = true;
+          map.resize?.();
+          updateMarkers(data);
+          setMapStatus('ready');
+        };
+
+        map.on('complete', () => {
+          renderMapMarkers();
+        });
+        window.setTimeout(renderMapMarkers, 2500);
 
         resizeObserver = new ResizeObserver(() => {
           mapRef.current?.resize?.();
@@ -245,14 +330,22 @@ export default function MapView() {
       resizeObserver?.disconnect();
       overlaysRef.current.forEach((overlay) => overlay.remove?.());
       overlaysRef.current = [];
+      markersRef.current = {};
       mapRef.current?.destroy?.();
       mapRef.current = null;
     };
   }, []);
 
+  useEffect(() => {
+    syncMarkerFocus(selectedNode?.node.id);
+  }, [selectedNode?.node.id]);
+
   const handleRefresh = async () => {
     const data = await loadLatest();
     updateMarkers(data);
+    if (selectedNode?.node.id) {
+      focusNode(selectedNode.node.id, data);
+    }
   };
 
   return (
@@ -340,7 +433,7 @@ export default function MapView() {
                   <motion.button
                     key={node.id}
                     whileHover={{ x: 4 }}
-                    onClick={() => setSelectedNode({ node, record })}
+                    onClick={() => focusNode(node.id)}
                     className={`flex w-full items-center justify-between rounded-2xl border p-3.5 text-left transition-all ${
                       selectedNode?.node.id === node.id
                         ? 'border-slate-900 bg-slate-900 shadow-xl'

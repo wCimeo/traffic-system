@@ -13,7 +13,7 @@ from datetime import datetime
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 # ─── 配置区 ────────────────────────────────────────────────
-AMAP_KEY = "d8438f907370521caf14d2d8ebfcfa80"
+AMAP_KEY = "bea4628e019f6cf58a88b2e5fd3595b3"
 
 DB_CONFIG = {
     "host": "localhost",
