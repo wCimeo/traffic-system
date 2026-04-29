@@ -39,6 +39,11 @@ export default function Layout({ children }: { children: ReactElement }) {
     navigate('/login');
   };
 
+  const handleUserInfoClick = () => {
+    localStorage.setItem('traffic_settings_active_section', 'overview');
+    navigate('/settings?section=overview');
+  };
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <aside className="relative z-20 flex w-72 shrink-0 flex-col border-r border-slate-200/60 bg-white dark:border-slate-800 dark:bg-slate-950">
@@ -101,23 +106,7 @@ export default function Layout({ children }: { children: ReactElement }) {
           </nav>
         </div>
 
-        <div className="mt-auto space-y-4 p-6">
-          <div className="rounded-[2rem] border border-slate-100 bg-slate-50 p-4 shadow-inner dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white font-bold text-brand-600 shadow-sm ring-1 ring-slate-200/50 dark:bg-slate-800 dark:ring-slate-700">
-                {user.displayName.slice(0, 1)}
-              </div>
-              <div className="min-w-0">
-                <div className="mb-1 truncate text-sm font-bold leading-none text-slate-800 dark:text-slate-100">
-                  {user.displayName}
-                </div>
-                <div className="truncate text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                  {user.username}
-                </div>
-              </div>
-            </div>
-          </div>
-
+        <div className="mt-auto p-6">
           <button
             onClick={handleLogout}
             className="group flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-500 transition-all hover:border-red-100 hover:bg-red-50 hover:text-red-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-red-900/40 dark:hover:bg-red-950/40 dark:hover:text-red-300"
@@ -136,13 +125,30 @@ export default function Layout({ children }: { children: ReactElement }) {
               {pageTitles[location.pathname] || '后台控制系统'}
             </h2>
           </div>
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2 rounded-full border border-slate-200/50 bg-slate-100 px-3 py-1.5 dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex min-w-0 items-center gap-4">
+            <div className="hidden items-center gap-2 rounded-full border border-slate-200/50 bg-slate-100 px-3 py-1.5 dark:border-slate-800 dark:bg-slate-900 xl:flex">
               <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500" />
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-300">
                 智能系统物理链路安全
               </span>
             </div>
+            <button
+              type="button"
+              onClick={handleUserInfoClick}
+              className="flex min-w-0 items-center gap-3 rounded-2xl border border-slate-200/70 bg-white px-3 py-2 text-left shadow-sm transition-all hover:border-brand-200 hover:bg-brand-50/60 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-brand-700/50 dark:hover:bg-slate-800"
+            >
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 font-bold text-brand-600 ring-1 ring-slate-200/50 dark:bg-slate-800 dark:ring-slate-700">
+                {user.displayName.slice(0, 1)}
+              </div>
+              <div className="min-w-0">
+                <div className="mb-1 max-w-36 truncate text-sm font-bold leading-none text-slate-800 dark:text-slate-100">
+                  {user.displayName}
+                </div>
+                <div className="max-w-36 truncate text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                  {user.username}
+                </div>
+              </div>
+            </button>
           </div>
         </header>
 

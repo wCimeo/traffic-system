@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useLocation } from 'react-router-dom';
 import {
   Check,
   ChevronRight,
@@ -36,6 +37,11 @@ const NODE_OPTIONS = ['all', 'A1', 'B2', 'C3', 'D4', 'E5', 'F6', 'G7', 'H8', 'I9
 function getStoredSection(): SettingsSection {
   const stored = localStorage.getItem(SETTINGS_SECTION_KEY);
   return stored === 'password' || stored === 'archive' || stored === 'overview' ? stored : 'overview';
+}
+
+function getSectionFromSearch(search: string): SettingsSection | null {
+  const section = new URLSearchParams(search).get('section');
+  return section === 'password' || section === 'archive' || section === 'overview' ? section : null;
 }
 
 function getStoredThemeMode(): ThemeMode {
@@ -196,6 +202,7 @@ function ReportExport({
 }
 
 export default function Settings() {
+  const location = useLocation();
   const user = JSON.parse(localStorage.getItem('user') || '{"displayName":"管理员","username":"admin_traffic"}');
   const [activeSection, setActiveSection] = useState<SettingsSection>(getStoredSection);
   const [themeMode, setThemeMode] = useState<ThemeMode>(getStoredThemeMode);
@@ -208,6 +215,13 @@ export default function Settings() {
   useEffect(() => {
     localStorage.setItem(SETTINGS_SECTION_KEY, activeSection);
   }, [activeSection]);
+
+  useEffect(() => {
+    const section = getSectionFromSearch(location.search);
+    if (section) {
+      setActiveSection(section);
+    }
+  }, [location.search]);
 
   useEffect(() => {
     localStorage.setItem(SETTINGS_THEME_KEY, themeMode);
