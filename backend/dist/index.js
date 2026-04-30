@@ -51,6 +51,38 @@ app.use((0, cors_1.default)());
 app.use(express_1.default.json({ limit: '5mb' }));
 app.use(express_1.default.urlencoded({ extended: true, limit: '5mb' }));
 app.use('/api/auth', auth_1.default);
+async function ensureIncidentsTableMigration() {
+    await db_1.default.query(`
+    CREATE TABLE IF NOT EXISTS incidents (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      node_id VARCHAR(16) NOT NULL,
+      type VARCHAR(120) NOT NULL,
+      description TEXT NOT NULL,
+      severity TINYINT NOT NULL DEFAULT 1,
+      status VARCHAR(24) NOT NULL DEFAULT 'reported',
+      reporter_id VARCHAR(64) NULL,
+      handler_id VARCHAR(64) NULL,
+      handled_at DATETIME NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+    const [columns] = await db_1.default.query(`SELECT COLUMN_NAME AS name
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'incidents'`);
+    const columnSet = new Set((columns || []).map((row) => row.name));
+    const addColumnIfMissing = async (name, definition) => {
+        if (!columnSet.has(name)) {
+            await db_1.default.query(`ALTER TABLE incidents ADD COLUMN ${name} ${definition}`);
+            columnSet.add(name);
+        }
+    };
+    await addColumnIfMissing('status', `VARCHAR(24) NOT NULL DEFAULT 'reported'`);
+    await addColumnIfMissing('reporter_id', 'VARCHAR(64) NULL');
+    await addColumnIfMissing('handler_id', 'VARCHAR(64) NULL');
+    await addColumnIfMissing('handled_at', 'DATETIME NULL');
+    await addColumnIfMissing('updated_at', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
+}
 // 节点列表
 const NODES_META = [
     { id: 'A1', name: '天府大道-锦城大道路口' },
@@ -188,10 +220,11 @@ app.get('/api/incidents', async (req, res) => {
     }
 });
 app.post('/api/incidents', async (req, res) => {
-    const { node_id, type, description, severity } = req.body;
+    const { node_id, type, description, severity, reporter_id, handler_id } = req.body;
     try {
-        const [result] = await db_1.default.query(`INSERT INTO incidents (node_id, type, description, severity, created_at)
-       VALUES (?, ?, ?, ?, NOW())`, [node_id, type, description, severity]);
+        const normalizedStatus = handler_id ? 'active' : 'reported';
+        const [result] = await db_1.default.query(`INSERT INTO incidents (node_id, type, description, severity, status, reporter_id, handler_id, created_at)
+       VALUES (?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NOW())`, [node_id, type, description, severity, normalizedStatus, reporter_id || '', handler_id || '']);
         res.json({ success: true, id: result.insertId });
     }
     catch (err) {
@@ -199,10 +232,62 @@ app.post('/api/incidents', async (req, res) => {
     }
 });
 app.put('/api/incidents/:id', async (req, res) => {
-    const { status } = req.body;
+    const { status, handler_id } = req.body;
+    const validStatus = new Set(['reported', 'active', 'resolved', 'ignored']);
+    const nextStatus = validStatus.has(status) ? status : 'active';
     try {
-        await db_1.default.query(`UPDATE incidents SET status = ? WHERE id = ?`, [status, req.params.id]);
+        await db_1.default.query(`UPDATE incidents
+       SET status = ?,
+           handler_id = COALESCE(NULLIF(?, ''), handler_id),
+           handled_at = CASE WHEN ? IN ('resolved', 'ignored') THEN NOW() ELSE handled_at END
+       WHERE id = ?`, [nextStatus, handler_id || '', nextStatus, req.params.id]);
         res.json({ success: true });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: String(err) });
+    }
+});
+app.delete('/api/incidents/:id', async (req, res) => {
+    try {
+        await db_1.default.query('DELETE FROM incidents WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: String(err) });
+    }
+});
+app.post('/api/incidents/mock-seed', async (req, res) => {
+    const count = Math.max(1, Math.min(30, Number(req.body?.count) || 8));
+    const types = ['交通事故', '道路施工', '异常拥堵', '信号灯故障', '抛锚车辆'];
+    const reporters = ['u1001', 'u1002', 'u1003', 'sys_camera', 'ops_noc'];
+    const handlers = ['op2001', 'op2002', 'op2003', ''];
+    const statuses = ['reported', 'active', 'resolved', 'ignored'];
+    try {
+        const values = [];
+        for (let i = 0; i < count; i += 1) {
+            const node = NODES_META[Math.floor(Math.random() * NODES_META.length)];
+            const type = types[Math.floor(Math.random() * types.length)];
+            const severity = 1 + Math.floor(Math.random() * 3);
+            const status = statuses[Math.floor(Math.random() * statuses.length)];
+            const reporter = reporters[Math.floor(Math.random() * reporters.length)];
+            const handler = handlers[Math.floor(Math.random() * handlers.length)];
+            const minutesAgo = Math.floor(Math.random() * 360);
+            values.push([
+                node.id,
+                type,
+                `${type} 模拟事件 #${Date.now().toString().slice(-5)}-${i + 1}`,
+                severity,
+                status,
+                reporter,
+                handler || null,
+                status === 'resolved' || status === 'ignored' ? new Date() : null,
+                new Date(Date.now() - minutesAgo * 60 * 1000),
+            ]);
+        }
+        await db_1.default.query(`INSERT INTO incidents
+      (node_id, type, description, severity, status, reporter_id, handler_id, handled_at, created_at)
+       VALUES ?`, [values]);
+        res.json({ success: true, inserted: values.length });
     }
     catch (err) {
         res.status(500).json({ success: false, error: String(err) });
@@ -222,6 +307,75 @@ app.get('/api/route/recommend', async (req, res) => {
     }
     catch (err) {
         res.status(500).json({ success: false, error: String(err) });
+    }
+});
+app.get('/api/route/decision', async (req, res) => {
+    const nodeId = String(req.query.node_id || '').trim();
+    const horizon = Number(req.query.horizon || 15);
+    const allowedHorizons = new Set([15, 30, 45, 60]);
+    const safeHorizon = allowedHorizons.has(horizon) ? horizon : 15;
+    if (!nodeId) {
+        return res.status(400).json({ success: false, error: 'node_id is required' });
+    }
+    try {
+        const NODE_IDS = ['A1', 'B2', 'C3', 'D4', 'E5', 'F6', 'G7', 'H8', 'I9', 'J10', 'K11'];
+        if (!NODE_IDS.includes(nodeId)) {
+            return res.status(400).json({ success: false, error: 'invalid node_id' });
+        }
+        const [rows] = await db_1.default.query(`SELECT node_id, speed, collected_at
+       FROM traffic_flow
+       WHERE collected_at >= (
+         SELECT MAX(collected_at) - INTERVAL 15 MINUTE FROM traffic_flow
+       )
+       ORDER BY collected_at ASC`);
+        const timeMap = {};
+        for (const row of rows) {
+            const t = new Date(row.collected_at).toISOString();
+            if (!timeMap[t])
+                timeMap[t] = {};
+            timeMap[t][row.node_id] = row.speed;
+        }
+        let window = Object.values(timeMap).slice(-12);
+        if (window.length < 12) {
+            const [latest] = await db_1.default.query(`SELECT node_id, speed FROM traffic_flow
+         WHERE collected_at = (SELECT MAX(collected_at) FROM traffic_flow)`);
+            const fallback = {};
+            for (const r of latest)
+                fallback[r.node_id] = r.speed;
+            while (window.length < 12)
+                window.unshift({ ...fallback });
+        }
+        const steps = safeHorizon / 15;
+        const flaskResp = await axios_1.default.post('http://localhost:5001/predict/multistep', { window, steps: 4 });
+        const flaskData = flaskResp.data;
+        if (!flaskData.success)
+            throw new Error(flaskData.error || 'predict failed');
+        const targetStepPred = flaskData.predictions[steps - 1] || {};
+        const predictedSpeed = Number(targetStepPred[nodeId] ?? 0);
+        let recommendation = '建议谨慎通行';
+        let level = 'normal';
+        if (predictedSpeed >= 40) {
+            recommendation = '建议通行';
+            level = 'good';
+        }
+        else if (predictedSpeed < 25) {
+            recommendation = '建议绕行';
+            level = 'bad';
+        }
+        return res.json({
+            success: true,
+            data: {
+                node_id: nodeId,
+                horizon: safeHorizon,
+                predicted_speed: predictedSpeed,
+                recommendation,
+                level,
+                generated_at: new Date().toISOString(),
+            },
+        });
+    }
+    catch (err) {
+        return res.status(500).json({ success: false, error: String(err) });
     }
 });
 // CSV报表导出
@@ -402,7 +556,8 @@ node_cron_1.default.schedule('*/5 * * * *', async () => {
     }
 }, { timezone: 'Asia/Shanghai' });
 (0, auth_1.ensureUserTableMigration)()
-    .then(() => {
+    .then(async () => {
+    await ensureIncidentsTableMigration();
     app.listen(PORT, () => {
         console.log(`后端服务运行在 http://localhost:${PORT}`);
     });

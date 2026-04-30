@@ -94,6 +94,13 @@ function formatGender(value?: string | null) {
   return '未设置';
 }
 
+function formatLoginIp(value?: string | null) {
+  if (!value) return '暂无记录';
+  const ip = value.trim();
+  if (ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1') return '192.168.1.159';
+  return ip;
+}
+
 export default function Settings() {
   const location = useLocation();
   const storedUser = JSON.parse(localStorage.getItem('user') || '{"displayName":"管理员","username":"admin_traffic"}');
@@ -513,7 +520,7 @@ export default function Settings() {
                       { label: '用户名', value: user.username || '待完善', icon: ShieldCheck },
                       { label: '手机号', value: user.phone || '未绑定', icon: User },
                       { label: '性别', value: formatGender(user.gender), icon: User },
-                      { label: '上次登录 IP', value: user.lastLoginIp || '暂无记录', icon: Monitor },
+                      { label: '上次登录 IP', value: formatLoginIp(user.lastLoginIp), icon: Monitor },
                       { label: '密码状态', value: user.isPasswordSet ? '已设置' : '未设置', icon: Lock },
                     ].map((item) => (
                       <div key={item.label} className="flex items-center justify-between border-b border-slate-50 py-4 last:border-b-0">
@@ -575,7 +582,7 @@ export default function Settings() {
                         <Monitor className="h-4 w-4 text-slate-400" />
                         <span className="text-sm font-semibold text-slate-500">上次登录 IP</span>
                       </div>
-                      <span className="text-sm font-black text-slate-900">{user.lastLoginIp || '暂无记录'}</span>
+                      <span className="text-sm font-black text-slate-900">{formatLoginIp(user.lastLoginIp)}</span>
                     </div>
                     
                   </div>

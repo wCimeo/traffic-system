@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Info, Layers, Maximize2, Navigation, RefreshCw } from 'lucide-react';
+import { Info, Layers, Maximize2, Minimize2, Navigation, RefreshCw } from 'lucide-react';
 import api from '../api';
 
 declare global {
@@ -124,15 +124,19 @@ const loadAMapSdk = async () => {
 export default function MapView() {
   const mapRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const mapShellRef = useRef<HTMLDivElement>(null);
   const overlaysRef = useRef<any[]>([]);
   const markersRef = useRef<Record<string, any>>({});
   const latestRef = useRef<any[]>([]);
+  const selectedNodeIdRef = useRef<string | null>(null);
   const [latest, setLatest] = useState<any[]>([]);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [lastUpdate, setLastUpdate] = useState('');
   const [loading, setLoading] = useState(false);
   const [mapStatus, setMapStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [mapError, setMapError] = useState('');
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const loadLatest = async () => {
     setLoading(true);
@@ -179,6 +183,7 @@ export default function MapView() {
     if (!node) return;
 
     const record = data.find((row) => row.node_id === nodeId);
+    setSelectedNodeId(nodeId);
     setSelectedNode({ node, record });
     syncMarkerFocus(nodeId);
 
@@ -221,13 +226,13 @@ export default function MapView() {
 
       const marker = new window.AMap.CircleMarker({
         center: [lng, lat],
-        radius: selectedNode?.node.id === node.id ? 17 : 12,
+        radius: selectedNodeIdRef.current === node.id ? 17 : 12,
         fillColor: color,
         fillOpacity: 0.9,
-        strokeColor: selectedNode?.node.id === node.id ? '#0f172a' : '#ffffff',
-        strokeWeight: selectedNode?.node.id === node.id ? 4 : 2,
+        strokeColor: selectedNodeIdRef.current === node.id ? '#0f172a' : '#ffffff',
+        strokeWeight: selectedNodeIdRef.current === node.id ? 4 : 2,
         cursor: 'pointer',
-        zIndex: selectedNode?.node.id === node.id ? 200 : 100,
+        zIndex: selectedNodeIdRef.current === node.id ? 200 : 100,
         extData: { node, record },
       });
 
@@ -246,6 +251,9 @@ export default function MapView() {
       });
 
       marker.on('click', () => {
+        focusNode(node.id, data);
+      });
+      label.on?.('click', () => {
         focusNode(node.id, data);
       });
 
@@ -338,8 +346,49 @@ export default function MapView() {
   }, []);
 
   useEffect(() => {
-    syncMarkerFocus(selectedNode?.node.id);
-  }, [selectedNode?.node.id]);
+    selectedNodeIdRef.current = selectedNodeId;
+    syncMarkerFocus(selectedNodeId || undefined);
+  }, [selectedNodeId]);
+
+  useEffect(() => {
+    if (!selectedNodeId) {
+      setSelectedNode(null);
+      return;
+    }
+
+    const node = NODE_META.find((item) => item.id === selectedNodeId);
+    if (!node) {
+      setSelectedNode(null);
+      return;
+    }
+
+    const record = latest.find((row) => row.node_id === selectedNodeId);
+    setSelectedNode({ node, record });
+  }, [latest, selectedNodeId]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const active = document.fullscreenElement === mapShellRef.current;
+      setIsFullscreen(active);
+      window.requestAnimationFrame(() => mapRef.current?.resize?.());
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const handleToggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await mapShellRef.current?.requestFullscreen?.();
+      } else if (document.fullscreenElement === mapShellRef.current) {
+        await document.exitFullscreen();
+      }
+      window.requestAnimationFrame(() => mapRef.current?.resize?.());
+    } catch (error) {
+      console.error('Fullscreen toggle failed', error);
+    }
+  };
 
   const handleRefresh = async () => {
     const data = await loadLatest();
@@ -399,7 +448,7 @@ export default function MapView() {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
           {NODE_META.map((node) => {
             const record = latest.find((row) => row.node_id === node.id);
-            const isActive = selectedNode?.node.id === node.id;
+            const isActive = selectedNodeId === node.id;
             return (
               <motion.button
                 key={node.id}
@@ -435,9 +484,9 @@ export default function MapView() {
         </div>
       </div>
 
-      <div className="grid h-[calc(100vh-330px)] min-h-[380px] max-h-[560px] grid-cols-1 gap-5">
+      <div className={`grid grid-cols-1 gap-5 ${isFullscreen ? 'h-screen' : 'h-[calc(100vh-330px)] min-h-[380px] max-h-[560px]'}`}>
         <div className="flex min-h-0 flex-col">
-          <div className="console-card flex min-h-0 flex-1 flex-col p-4 shadow-lg">
+          <div ref={mapShellRef} className={`console-card flex min-h-0 flex-1 flex-col p-4 shadow-lg ${isFullscreen ? 'rounded-none p-6' : ''}`}>
             <div className="relative min-h-0 flex-1 overflow-hidden rounded-[1.5rem] bg-slate-100">
               <div ref={containerRef} className="h-full w-full" />
 
@@ -454,8 +503,12 @@ export default function MapView() {
               </div>
 
               <div className="absolute right-4 top-4 z-10">
-                <button className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/70 bg-white/90 text-slate-700 shadow-sm transition-colors hover:bg-white">
-                  <Maximize2 className="h-4 w-4" />
+                <button
+                  type="button"
+                  onClick={handleToggleFullscreen}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/70 bg-white/90 text-slate-700 shadow-sm transition-colors hover:bg-white"
+                >
+                  {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
                 </button>
               </div>
 
