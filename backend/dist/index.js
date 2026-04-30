@@ -63,6 +63,7 @@ const NODES_META = [
     { id: 'J10', name: '东站西广场-邛崃山路路口' },
 ];
 // 健康检查
+NODES_META.push({ id: 'K11', name: '人民南路四段' });
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
 });

@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import api from '../api';
 
-const NODE_OPTIONS = ['A1','B2','C3','D4','E5','F6','G7','H8','I9','J10'];
+const NODE_OPTIONS = ['A1','B2','C3','D4','E5','F6','G7','H8','I9','J10','K11'];
 
 const STATUS_LABEL: Record<number, { label: string; color: string; bg: string }> = {
   0: { label: '未知', color: '#94a3b8', bg: '#f1f5f9' },

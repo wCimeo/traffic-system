@@ -50,6 +50,9 @@ NODES = [
 ]
 
 
+NODES.append({"id": "K11", "name": "人民南路四段", "lng": 104.066986, "lat": 30.6194897})
+
+
 def fetch_traffic(node: dict) -> dict | None:
     """
     调用高德圆形区域路况接口，返回该路口的速度与拥堵状态。

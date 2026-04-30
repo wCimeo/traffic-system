@@ -32,6 +32,7 @@ const NODE_META = [
   { id: 'H8', name: '科华南路-锦尚西二路口', lng: 104.0785, lat: 30.5892 },
   { id: 'I9', name: '中环路火车南站-科华南路口', lng: 104.077952, lat: 30.608579 },
   { id: 'J10', name: '东站西广场-邛崃山路路口', lng: 104.1356, lat: 30.6298 },
+  { id: 'K11', name: '人民南路四段', lng: 104.066986, lat: 30.6194897 },
 ];
 
 const STATUS_COLOR: Record<number, string> = {

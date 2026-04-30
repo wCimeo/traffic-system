@@ -42,7 +42,7 @@ type ExportRecord = {
 const SETTINGS_SECTION_KEY = 'traffic_settings_active_section';
 const SETTINGS_THEME_KEY = 'traffic_theme_mode';
 const EXPORT_HISTORY_KEY = 'traffic_export_history';
-const NODE_OPTIONS = ['all', 'A1', 'B2', 'C3', 'D4', 'E5', 'F6', 'G7', 'H8', 'I9', 'J10'];
+const NODE_OPTIONS = ['all', 'A1', 'B2', 'C3', 'D4', 'E5', 'F6', 'G7', 'H8', 'I9', 'J10', 'K11'];
 
 function getStoredSection(): SettingsSection {
   const stored = localStorage.getItem(SETTINGS_SECTION_KEY);

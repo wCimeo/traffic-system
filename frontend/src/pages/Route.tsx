@@ -22,6 +22,7 @@ const NODE_META: Record<string, string> = {
   H8: '科华南路-锦尚西二路路口',
   I9: '中环路火车南站-科华南路口',
   J10: '东站西广场-邛崃山路路口',
+  K11: '人民南路四段',
 };
 
 const STATUS_COLOR: Record<number, string> = {

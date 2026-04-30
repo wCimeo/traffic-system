@@ -23,6 +23,7 @@ const NODE_META = [
   { id: 'H8',  name: '科华南路-锦尚西二路路口' },
   { id: 'I9',  name: '中环路火车南站-科华南路口' },
   { id: 'J10', name: '东站西广场-邛崃山路路口' },
+  { id: 'K11', name: '人民南路四段' },
 ];
 
 const SEVERITY_MAP: Record<number, { label: string; color: string; bg: string }> = {
