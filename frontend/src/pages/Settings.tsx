@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useLocation } from 'react-router-dom';
 import {
   Check,
+  BookOpenText,
   ChevronRight,
   Download,
   FileArchive,
@@ -17,7 +18,7 @@ import {
 } from 'lucide-react';
 import api from '../api';
 
-type SettingsSection = 'overview' | 'password' | 'archive';
+type SettingsSection = 'overview' | 'password' | 'archive' | 'docs';
 type ThemeMode = 'light' | 'dark' | 'system';
 type CurrentUser = {
   id?: number;
@@ -46,12 +47,12 @@ const NODE_OPTIONS = ['all', 'A1', 'B2', 'C3', 'D4', 'E5', 'F6', 'G7', 'H8', 'I9
 
 function getStoredSection(): SettingsSection {
   const stored = localStorage.getItem(SETTINGS_SECTION_KEY);
-  return stored === 'password' || stored === 'archive' || stored === 'overview' ? stored : 'overview';
+  return stored === 'password' || stored === 'archive' || stored === 'overview' || stored === 'docs' ? stored : 'overview';
 }
 
 function getSectionFromSearch(search: string): SettingsSection | null {
   const section = new URLSearchParams(search).get('section');
-  return section === 'password' || section === 'archive' || section === 'overview' ? section : null;
+  return section === 'password' || section === 'archive' || section === 'overview' || section === 'docs' ? section : null;
 }
 
 function getStoredThemeMode(): ThemeMode {
@@ -85,6 +86,14 @@ function formatDateTime(value?: string | null) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
+function formatGender(value?: string | null) {
+  if (value === 'male') return '男';
+  if (value === 'female') return '女';
+  if (value === 'other') return '其他';
+  if (value === 'unknown') return '不便透露';
+  return '未设置';
+}
+
 export default function Settings() {
   const location = useLocation();
   const storedUser = JSON.parse(localStorage.getItem('user') || '{"displayName":"管理员","username":"admin_traffic"}');
@@ -99,6 +108,15 @@ export default function Settings() {
   const [pwForm, setPwForm] = useState({ oldPassword: '', newPassword: '', confirm: '' });
   const [pwMsg, setPwMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [pwLoading, setPwLoading] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    nickname: storedUser.nickname || storedUser.displayName || '',
+    avatarUrl: storedUser.avatarUrl || '',
+    gender: storedUser.gender || '',
+  });
+  const [profileMsg, setProfileMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileEditing, setProfileEditing] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const section = getSectionFromSearch(location.search);
@@ -117,6 +135,11 @@ export default function Settings() {
     api.get('/api/auth/me')
       .then((res) => {
         setUser(res.data.user);
+        setProfileForm({
+          nickname: res.data.user.nickname || res.data.user.displayName || '',
+          avatarUrl: res.data.user.avatarUrl || '',
+          gender: res.data.user.gender || '',
+        });
         localStorage.setItem('user', JSON.stringify(res.data.user));
       })
       .catch(() => null);
@@ -167,6 +190,102 @@ export default function Settings() {
     } finally {
       setTimeout(() => setPwLoading(false), 600);
     }
+  };
+
+  const handleSaveProfile = async () => {
+    if (!profileForm.nickname.trim()) {
+      setProfileMsg({ text: '请输入昵称', ok: false });
+      return;
+    }
+
+    setProfileLoading(true);
+    try {
+      const res = await api.post('/api/auth/profile', {
+        nickname: profileForm.nickname.trim(),
+        avatarUrl: profileForm.avatarUrl.trim(),
+        gender: profileForm.gender,
+      });
+      setUser(res.data.user);
+      setProfileForm({
+        nickname: res.data.user.nickname || res.data.user.displayName || '',
+        avatarUrl: res.data.user.avatarUrl || '',
+        gender: res.data.user.gender || '',
+      });
+      localStorage.setItem('user', JSON.stringify(res.data.user));
+      window.dispatchEvent(new CustomEvent('traffic:user-updated', { detail: res.data.user }));
+      setProfileMsg({ text: '用户信息已保存', ok: true });
+    } catch (err: any) {
+      setProfileMsg({ text: err.response?.data?.error || '用户信息保存失败，请重试', ok: false });
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const saveInlineProfile = async () => {
+    if (!profileForm.nickname.trim()) {
+      setProfileMsg({ text: '请输入显示名称', ok: false });
+      return;
+    }
+
+    setProfileLoading(true);
+    try {
+      const res = await api.post('/api/auth/profile', {
+        nickname: profileForm.nickname.trim(),
+        avatarUrl: profileForm.avatarUrl.trim(),
+        gender: profileForm.gender,
+      });
+      setUser(res.data.user);
+      setProfileForm({
+        nickname: res.data.user.nickname || res.data.user.displayName || '',
+        avatarUrl: res.data.user.avatarUrl || '',
+        gender: res.data.user.gender || '',
+      });
+      localStorage.setItem('user', JSON.stringify(res.data.user));
+      window.dispatchEvent(new CustomEvent('traffic:user-updated', { detail: res.data.user }));
+      setProfileMsg({ text: '用户信息已保存', ok: true });
+      setProfileEditing(false);
+    } catch (err: any) {
+      setProfileMsg({ text: err.response?.data?.error || '用户信息保存失败，请重试', ok: false });
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const handleAvatarPick = () => {
+    avatarInputRef.current?.click();
+  };
+
+  const handleAvatarFileChange = (event: any) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setProfileMsg({ text: '请选择图片文件', ok: false });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      if (!result) {
+        setProfileMsg({ text: '头像读取失败', ok: false });
+        return;
+      }
+      setProfileForm((current) => ({ ...current, avatarUrl: result }));
+      setProfileEditing(true);
+      setProfileMsg({ text: '头像已选择，保存后生效', ok: true });
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
+  };
+
+  const cancelInlineProfileEdit = () => {
+    setProfileForm({
+      nickname: user.nickname || user.displayName || '',
+      avatarUrl: user.avatarUrl || '',
+      gender: user.gender || '',
+    });
+    setProfileEditing(false);
+    setProfileMsg(null);
   };
 
   const handleExport = () => {
@@ -257,6 +376,23 @@ export default function Settings() {
                 </button>
               );
             })}
+            <button
+              onClick={() => setActiveSection('docs')}
+              className={`flex w-full items-center gap-4 rounded-[24px] px-4 py-4 text-left transition-all ${
+                activeSection === 'docs' ? 'bg-brand-50 ring-1 ring-brand-100' : 'hover:bg-slate-50'
+              }`}
+            >
+              <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${
+                activeSection === 'docs' ? 'bg-white text-brand-600 shadow-sm' : 'bg-slate-50 text-slate-500'
+              }`}>
+                <BookOpenText className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className={`text-sm font-black ${activeSection === 'docs' ? 'text-slate-950' : 'text-slate-800'}`}>系统说明</div>
+                <div className="mt-1 text-xs font-medium text-slate-500">文字说明与术语解释</div>
+              </div>
+              <ChevronRight className={`h-4 w-4 ${activeSection === 'docs' ? 'text-brand-600' : 'text-slate-300'}`} />
+            </button>
           </div>
         </aside>
 
@@ -279,28 +415,104 @@ export default function Settings() {
                       <div className="text-sm font-black">请设置密码以保障账户安全</div>
                       <div className="mt-1 text-xs font-semibold text-amber-700">手机号验证码注册的新用户可以在这里补全登录密码。</div>
                     </div>
+                    {false && <div>
+                      {profileEditing ? (
+                        <input
+                          className="input-base h-10 w-[220px]"
+                          value={profileForm.nickname}
+                          onChange={(event) => setProfileForm((current) => ({ ...current, nickname: event.target.value }))}
+                          placeholder="请输入显示名称"
+                        />
+                      ) : (
+                        <h3 className="text-xl font-black text-slate-900">{user.displayName || user.nickname || user.username || '用户'}</h3>
+                      )}
+                      <p className="mt-1 text-sm text-slate-500">上次登录时间：{formatDateTime(user.lastLoginTime)}</p>
+                    </div>}
                     <ChevronRight className="h-5 w-5" />
                   </button>
                 )}
 
                 <div className="console-card bg-white p-8">
-                  <div className="mb-8 flex items-center gap-4">
-                    <img
-                      src={user.avatarUrl || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(user.displayName || user.username || 'user')}`}
+                  <div className="mb-8 flex items-start justify-between gap-4">
+                    <button
+                      type="button"
+                      onClick={handleAvatarPick}
+                      className="relative overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 transition-transform hover:scale-[1.02]"
+                    >
+                      <img
+                      src={profileForm.avatarUrl || user.avatarUrl || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(user.displayName || user.username || 'user')}`}
                       alt="用户头像"
-                      className="h-16 w-16 rounded-2xl border border-slate-100 bg-slate-50"
+                      className="h-16 w-16 object-cover"
                     />
-                    <div>
+                      <span className="absolute inset-x-0 bottom-0 bg-slate-900/75 px-2 py-1 text-[10px] font-black text-white">更换头像</span>
+                    </button>
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleAvatarFileChange}
+                    />
+                    {false && <div>
                       <h3 className="text-xl font-black text-slate-900">{user.nickname || user.displayName || '用户'}</h3>
                       <p className="mt-1 text-sm text-slate-500">上次登录时间：{formatDateTime(user.lastLoginTime)}</p>
+                    </div>}
+                    <div>
+                      {profileEditing ? (
+                        <input
+                          className="input-base h-10 w-[220px]"
+                          value={profileForm.nickname}
+                          onChange={(event) => setProfileForm((current) => ({ ...current, nickname: event.target.value }))}
+                          placeholder="请输入显示名称"
+                        />
+                      ) : (
+                        <h3 className="text-xl font-black text-slate-900">{user.displayName || user.nickname || user.username || '用户'}</h3>
+                      )}
+                      <p className="mt-1 text-sm text-slate-500">上次登录时间：{formatDateTime(user.lastLoginTime)}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {profileEditing ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={cancelInlineProfileEdit}
+                            className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-500 transition-colors hover:bg-slate-50"
+                          >
+                            取消
+                          </button>
+                          <button
+                            type="button"
+                            onClick={saveInlineProfile}
+                            disabled={profileLoading}
+                            className="btn-primary h-10 px-4 text-xs disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {profileLoading ? '保存中...' : '保存'}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setProfileEditing(true)}
+                          className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:bg-slate-50"
+                        >
+                          编辑资料
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  <div className="space-y-2">
+                  {profileMsg && (
+                    <div className={`mb-6 text-xs font-black ${profileMsg.ok ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {profileMsg.text}
+                    </div>
+                  )}
+
+                  <div className="hidden">
                     {[
                       { label: '用户名', value: user.username || '待完善', icon: ShieldCheck },
                       { label: '手机号', value: user.phone || '未绑定', icon: User },
-                      { label: '性别', value: user.gender || '未设置', icon: User },
+                      { label: '性别', value: formatGender(user.gender), icon: User },
                       { label: '上次登录 IP', value: user.lastLoginIp || '暂无记录', icon: Monitor },
                       { label: '密码状态', value: user.isPasswordSet ? '已设置' : '未设置', icon: Lock },
                     ].map((item) => (
@@ -312,6 +524,118 @@ export default function Settings() {
                         <span className="text-sm font-black text-slate-900">{item.value}</span>
                       </div>
                     ))}
+                  </div>
+
+                  <div className="space-y-2">
+                    
+                    <div className="flex items-center justify-between border-b border-slate-50 py-4">
+                      <div className="flex items-center gap-3">
+                        <ShieldCheck className="h-4 w-4 text-slate-400" />
+                        <span className="text-sm font-semibold text-slate-500">登录账号</span>
+                      </div>
+                      <span className="text-sm font-black text-slate-900">{user.username || '待完善'}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-4">
+                      <div className="flex items-center gap-3">
+                        <Lock className="h-4 w-4 text-slate-400" />
+                        <span className="text-sm font-semibold text-slate-500">密码状态</span>
+                      </div>
+                      <span className="text-sm font-black text-slate-900">{user.isPasswordSet ? '已设置' : '未设置'}</span>
+                    </div>
+                    <div className="flex items-center justify-between border-b border-slate-50 py-4">
+                      <div className="flex items-center gap-3">
+                        <User className="h-4 w-4 text-slate-400" />
+                        <span className="text-sm font-semibold text-slate-500">手机号</span>
+                      </div>
+                      <span className="text-sm font-black text-slate-900">{user.phone || '未绑定'}</span>
+                    </div>
+                    <div className="flex items-center justify-between border-b border-slate-50 py-4">
+                      <div className="flex items-center gap-3">
+                        <User className="h-4 w-4 text-slate-400" />
+                        <span className="text-sm font-semibold text-slate-500">性别</span>
+                      </div>
+                      {profileEditing ? (
+                        <select
+                          className="input-base h-10 w-[140px]"
+                          value={profileForm.gender}
+                          onChange={(event) => setProfileForm((current) => ({ ...current, gender: event.target.value }))}
+                        >
+                          <option value="">未设置</option>
+                          <option value="male">男</option>
+                          <option value="female">女</option>
+                          <option value="other">其他</option>
+                          <option value="unknown">不便透露</option>
+                        </select>
+                      ) : (
+                        <span className="text-sm font-black text-slate-900">{formatGender(user.gender)}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between border-b border-slate-50 py-4">
+                      <div className="flex items-center gap-3">
+                        <Monitor className="h-4 w-4 text-slate-400" />
+                        <span className="text-sm font-semibold text-slate-500">上次登录 IP</span>
+                      </div>
+                      <span className="text-sm font-black text-slate-900">{user.lastLoginIp || '暂无记录'}</span>
+                    </div>
+                    
+                  </div>
+
+                  <div className="hidden mt-8 border-t border-slate-50 pt-8">
+                    <div className="mb-5">
+                      <h4 className="text-sm font-black text-slate-900">编辑用户信息</h4>
+                      <p className="mt-1 text-xs font-semibold text-slate-400">头像、昵称和性别会同步更新到主界面用户卡片</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="ml-1 text-[11px] font-bold text-slate-500">昵称</label>
+                        <input
+                          className="input-base"
+                          value={profileForm.nickname}
+                          onChange={(event) => setProfileForm((current) => ({ ...current, nickname: event.target.value }))}
+                          placeholder="请输入昵称"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="ml-1 text-[11px] font-bold text-slate-500">性别</label>
+                        <select
+                          className="input-base"
+                          value={profileForm.gender}
+                          onChange={(event) => setProfileForm((current) => ({ ...current, gender: event.target.value }))}
+                        >
+                          <option value="">未设置</option>
+                          <option value="male">男</option>
+                          <option value="female">女</option>
+                          <option value="other">其他</option>
+                          <option value="unknown">不便透露</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2 xl:col-span-2">
+                        <label className="ml-1 text-[11px] font-bold text-slate-500">头像链接</label>
+                        <input
+                          className="input-base"
+                          value={profileForm.avatarUrl}
+                          onChange={(event) => setProfileForm((current) => ({ ...current, avatarUrl: event.target.value }))}
+                          placeholder="https://..."
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <button
+                        onClick={handleSaveProfile}
+                        disabled={profileLoading}
+                        className="btn-primary gap-2 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Check className="h-4 w-4" />
+                        <span>{profileLoading ? '保存中...' : '保存用户信息'}</span>
+                      </button>
+                      {profileMsg && (
+                        <span className={`text-xs font-black ${profileMsg.ok ? 'text-emerald-600' : 'text-red-500'}`}>
+                          {profileMsg.text}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -355,6 +679,107 @@ export default function Settings() {
                   </div>
                 </div>
 
+              </motion.div>
+            )}
+
+            {activeSection === 'docs' && (
+              <motion.div
+                key="docs"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-8"
+              >
+                <div className="console-card bg-white p-8">
+                  <div className="mb-8 flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white">
+                      <BookOpenText className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900">系统文字说明</h3>
+                      <p className="text-sm text-slate-500">面向日常运维、数据检查和论文展示的功能说明</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                    {[
+                      { title: '实时路网地图', text: '展示核心路口的实时速度和拥堵状态，路口列表与地图标记可以联动聚焦。' },
+                      { title: '控制台总览', text: '汇总最新采集数据、平均速度、拥堵节点数量和预测服务状态。' },
+                      { title: '历史档案导出', text: '按时间范围和路口筛选导出 CSV，也可导出当前预测报表。' },
+                    ].map((item) => (
+                      <div key={item.title} className="rounded-[24px] border border-slate-100 bg-slate-50 p-5">
+                        <div className="text-sm font-black text-slate-900">{item.title}</div>
+                        <p className="mt-2 text-xs leading-5 text-slate-500">{item.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="console-card bg-white p-8">
+                  <div className="mb-8 flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
+                      <Monitor className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900">系统术语解释</h3>
+                      <p className="text-sm text-slate-500">统一界面、报表和模型相关概念口径</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {[
+                      { term: '节点', desc: '系统监控的一个核心路口，例如 A1、B2、K11。' },
+                      { term: '通行速度', desc: '高德路况接口或历史数据中采集到的路段平均车速，单位为 km/h。' },
+                      { term: '拥堵状态', desc: '路况等级字段，通常包括畅通、缓行、拥堵、严重拥堵等状态。' },
+                      { term: '采集窗口', desc: '模型预测时使用的最近连续时间步数据，目前默认使用 12 个时间步。' },
+                      { term: 'LST-GCN', desc: '结合时序建模和图卷积的交通速度预测模型，用于推演下一时段路况。' },
+                      { term: '预测报表', desc: '基于当前窗口生成的未来 15 分钟和 30 分钟速度、状态推演结果。' },
+                    ].map((item) => (
+                      <div key={item.term} className="flex flex-col gap-2 border-b border-slate-50 py-4 last:border-b-0 md:flex-row md:items-start md:justify-between">
+                        <div className="text-sm font-black text-slate-900">{item.term}</div>
+                        <div className="max-w-3xl text-sm leading-6 text-slate-500">{item.desc}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="console-card bg-white p-8">
+                  <div className="mb-8 flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                      <BookOpenText className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900">速度-流量-密度关系</h3>
+                      <p className="text-sm text-slate-500">基于 Greenshields 模型解释车辆速度与拥堵状态的映射逻辑</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                    {[
+                      { title: '基本交通流关系', text: '流量 q = 速度 v x 密度 k。单位时间通过车辆越多，流量越高；但密度继续升高会压低速度。' },
+                      { title: 'Greenshields 线性假设', text: '平均速度 v = vf x (1 - k / kj)。vf 表示自由流速度，kj 表示阻塞密度。' },
+                      { title: '拥堵区判断', text: '当密度超过临界密度 kj / 2 后，速度和流量会同步下降，车辆排队与上游拥堵开始累积。' },
+                      { title: '高德拥堵状态', text: 'congestion_status 直接来自高德 API 返回字段：1=畅通，2=缓行，3=拥堵，4=严重拥堵，不由系统主观设定。' },
+                      { title: 'road_count 含义', text: '采集脚本以路口坐标为圆心、半径 100 米取圆，圆内覆盖路段数量即 road_count，用于描述采集代表性。' },
+                      { title: '预测目标口径', text: '系统预测目标是路口平均行驶速度，不是车辆数量。速度可作为交通状态和拥堵程度的代理变量。' },
+                    ].map((item) => (
+                      <div key={item.title} className="rounded-[24px] border border-slate-100 bg-slate-50 p-5">
+                        <div className="text-sm font-black text-slate-900">{item.title}</div>
+                        <p className="mt-2 text-xs leading-5 text-slate-500">{item.text}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-6 rounded-[24px] bg-slate-50 px-5 py-4 ring-1 ring-slate-100">
+                    <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">系统应用口径</div>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">
+                      当前系统主要使用高德路况速度和 congestion_status。高德 API 本质上提供路段速度与拥堵状态，不能直接提供单位时间通过路口的车辆数量；
+                      车辆计数通常依赖路口摄像头、地感线圈等交管设备。论文与系统说明中应将预测目标明确为“路口平均行驶速度”，并用 Greenshields
+                      模型解释速度、密度与流量之间的理论关系：速度下降通常意味着车辆密度升高、拥堵程度增强。因此，用速度作为交通状态代理变量是合理且自洽的。
+                      road_count 目前仅作为采集覆盖路段数量存储，暂未参与模型推理和前端判断。
+                    </p>
+                  </div>
+                </div>
               </motion.div>
             )}
 

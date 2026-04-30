@@ -18,11 +18,16 @@ const SMS_RATE_LIMIT_SECONDS = 60;
 const CAPTCHA_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz';
 const memoryStore = new Map();
 function getClientIp(req) {
+    const realIp = req.headers['x-real-ip'];
+    if (typeof realIp === 'string' && realIp.length > 0) {
+        return realIp.trim();
+    }
     const forwarded = req.headers['x-forwarded-for'];
     if (typeof forwarded === 'string' && forwarded.length > 0) {
         return forwarded.split(',')[0].trim();
     }
-    return req.ip || req.socket.remoteAddress || 'unknown';
+    const raw = req.ip || req.socket.remoteAddress || 'unknown';
+    return raw.replace(/^::ffff:/, '');
 }
 function normalizePhone(phone) {
     return String(phone || '').trim();
@@ -117,8 +122,12 @@ async function ensureUserTableMigration() {
     await addColumnIfMissing(columns, 'token_expires_at', 'DATETIME NULL');
     await addColumnIfMissing(columns, 'created_at', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP');
     await addColumnIfMissing(columns, 'updated_at', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
+    if (columns.has('avatar_url')) {
+        await db_1.default.query('ALTER TABLE users MODIFY COLUMN avatar_url LONGTEXT NULL');
+    }
     if (columns.has('password_hash')) {
         await db_1.default.query('UPDATE users SET password = COALESCE(password, password_hash) WHERE password_hash IS NOT NULL');
+        await db_1.default.query('ALTER TABLE users MODIFY COLUMN password_hash VARCHAR(255) NULL');
     }
     if (columns.has('display_name')) {
         await db_1.default.query('UPDATE users SET nickname = COALESCE(NULLIF(nickname, ""), display_name, username, "用户")');
@@ -360,10 +369,32 @@ router.get('/verify', requireAuth, async (req, res) => {
         getClientIp(req),
         req.user.id,
     ]);
-    res.json({ success: true, user: serializeUser(req.user) });
+    const [rows] = await db_1.default.query('SELECT * FROM users WHERE id = ?', [req.user.id]);
+    res.json({ success: true, user: serializeUser(rows[0]) });
 });
 router.get('/me', requireAuth, (req, res) => {
     res.json({ success: true, user: serializeUser(req.user) });
+});
+router.post('/profile', requireAuth, async (req, res) => {
+    const nickname = String(req.body.nickname || '').trim();
+    const avatarUrl = String(req.body.avatarUrl || '').trim();
+    const gender = String(req.body.gender || '').trim();
+    const allowedGender = ['', 'male', 'female', 'other', 'unknown'];
+    if (nickname.length < 1 || nickname.length > 30) {
+        return res.status(400).json({ success: false, error: '昵称需为 1-30 个字符' });
+    }
+    if (avatarUrl && avatarUrl.length > 2 * 1024 * 1024) {
+        return res.status(400).json({ success: false, error: '头像链接过长' });
+    }
+    if (avatarUrl && !/^https?:\/\//i.test(avatarUrl) && !/^data:image\/[a-zA-Z0-9.+-]+;base64,/i.test(avatarUrl)) {
+        return res.status(400).json({ success: false, error: '头像链接需以 http:// 或 https:// 开头' });
+    }
+    if (!allowedGender.includes(gender)) {
+        return res.status(400).json({ success: false, error: '性别字段不合法' });
+    }
+    await db_1.default.query('UPDATE users SET nickname = ?, avatar_url = NULLIF(?, ""), gender = NULLIF(?, "") WHERE id = ?', [nickname, avatarUrl, gender, req.user.id]);
+    const [rows] = await db_1.default.query('SELECT * FROM users WHERE id = ?', [req.user.id]);
+    res.json({ success: true, user: serializeUser(rows[0]) });
 });
 router.post('/change-password', requireAuth, async (req, res) => {
     const { oldPassword, newPassword } = req.body;

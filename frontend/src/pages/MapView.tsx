@@ -278,7 +278,7 @@ export default function MapView() {
           viewMode: '2D',
           zoom: 12,
           center: [104.082, 30.592],
-          mapStyle: 'amap://styles/normal', // 使用高德提供的标准底图样式:normal/light/dark/fresh/graffiti/blue/wine/darkblue/whitesmok/grey/macaron
+          mapStyle: 'amap://styles/light', // 使用高德提供的标准底图样式:normal/light/dark/fresh/graffiti/blue/wine/darkblue/whitesmok/grey/macaron
           resizeEnable: true,
           showLabel: true,
           features: ['bg', 'road', 'building'],
@@ -350,11 +350,11 @@ export default function MapView() {
   };
 
   return (
-    <div className="space-y-8 pb-10">
-      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+    <div className="space-y-5 pb-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-4xl font-black tracking-tight text-slate-950">实时路网地图</h1>
-          <p className="mt-2 text-[11px] font-semibold tracking-wide text-slate-500">
+          <h1 className="text-3xl font-black tracking-tight text-slate-950">实时路网地图</h1>
+          <p className="mt-1 text-[11px] font-semibold tracking-wide text-slate-500">
             读取最新路况数据并在地图上展示核心路口的拥堵状态与通行速度。
           </p>
         </div>
@@ -372,17 +372,80 @@ export default function MapView() {
         </div>
       </div>
 
-      <div className="grid h-[760px] grid-cols-1 gap-8 xl:grid-cols-4">
-        <div className="flex h-full flex-col space-y-6 xl:col-span-3">
-          <div className="console-card flex flex-1 flex-col p-6 shadow-lg">
-            <div className="relative min-h-[560px] flex-1 overflow-hidden rounded-[2rem] bg-slate-100">
+      <div className="console-card bg-white p-4 shadow-sm">
+        <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-widest text-slate-900">路口列表</h3>
+            <p className="mt-1 text-[10px] font-bold uppercase text-slate-400">点击路口卡片可同步聚焦地图标记</p>
+          </div>
+          {selectedNode && (
+            <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-slate-900 px-4 py-3 text-white">
+              <div className="flex items-center gap-2">
+                <Navigation className="h-3 w-3 text-brand-400" />
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-400">{selectedNode.node.id} 已选中</span>
+              </div>
+              <span className="text-xs font-black data-mono">{selectedNode.record?.speed ?? '--'} km/h</span>
+              <span
+                className="text-[10px] font-black uppercase tracking-widest"
+                style={{ color: STATUS_COLOR[selectedNode.record?.congestion_status ?? 0] }}
+              >
+                {STATUS_LABEL[selectedNode.record?.congestion_status ?? 0]}
+              </span>
+              <span className="max-w-[16rem] truncate text-[10px] font-bold text-slate-400">{selectedNode.node.name}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
+          {NODE_META.map((node) => {
+            const record = latest.find((row) => row.node_id === node.id);
+            const isActive = selectedNode?.node.id === node.id;
+            return (
+              <motion.button
+                key={node.id}
+                whileHover={{ y: -2 }}
+                onClick={() => focusNode(node.id)}
+                className={`flex min-w-0 items-center justify-between rounded-2xl border px-3.5 py-3 text-left transition-all ${
+                  isActive
+                    ? 'border-slate-900 bg-slate-900 shadow-xl'
+                    : 'border-slate-100/70 bg-slate-50/70 hover:border-slate-200 hover:bg-white'
+                }`}
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[10px] font-black ${
+                      isActive ? 'bg-white/10 text-brand-400' : 'bg-white text-slate-500 shadow-sm'
+                    }`}
+                  >
+                    {node.id}
+                  </div>
+                  <div className="min-w-0">
+                    <div className={`text-[10px] font-black uppercase tracking-tight ${isActive ? 'text-white' : 'text-slate-800'}`}>
+                      {node.id} 路口
+                    </div>
+                    <div className="max-w-[7rem] truncate text-[10px] font-medium text-slate-400">{node.name}</div>
+                  </div>
+                </div>
+                <div className={`ml-3 shrink-0 text-[10px] font-black data-mono ${isActive ? 'text-brand-400' : 'text-slate-500'}`}>
+                  {record ? `${record.speed} km/h` : '--'}
+                </div>
+              </motion.button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="grid h-[calc(100vh-330px)] min-h-[380px] max-h-[560px] grid-cols-1 gap-5">
+        <div className="flex min-h-0 flex-col">
+          <div className="console-card flex min-h-0 flex-1 flex-col p-4 shadow-lg">
+            <div className="relative min-h-0 flex-1 overflow-hidden rounded-[1.5rem] bg-slate-100">
               <div ref={containerRef} className="h-full w-full" />
 
-              <div className="absolute left-6 top-6 z-10 flex flex-wrap gap-2">
+              <div className="absolute left-4 top-4 z-10 flex flex-wrap gap-2">
                 {Object.entries(STATUS_LABEL).map(([key, value]) => (
                   <div
                     key={key}
-                    className="flex items-center gap-2 rounded-full border border-white/60 bg-white/90 px-3 py-1.5 backdrop-blur-md"
+                    className="flex items-center gap-2 rounded-full border border-white/60 bg-white/90 px-2.5 py-1.5 backdrop-blur-md"
                   >
                     <div className="h-1.5 w-1.5 rounded-full" style={{ background: STATUS_COLOR[Number(key)] }} />
                     <span className="text-[10px] font-black text-slate-700">{value}</span>
@@ -390,15 +453,15 @@ export default function MapView() {
                 ))}
               </div>
 
-              <div className="absolute right-6 top-6 z-10">
-                <button className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-white/90 text-slate-700 shadow-sm transition-colors hover:bg-white">
+              <div className="absolute right-4 top-4 z-10">
+                <button className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/70 bg-white/90 text-slate-700 shadow-sm transition-colors hover:bg-white">
                   <Maximize2 className="h-4 w-4" />
                 </button>
               </div>
 
-              <div className="absolute bottom-6 left-6 z-10 max-w-xs rounded-3xl border border-white/70 bg-white/92 p-5 shadow-lg backdrop-blur-md">
+              <div className="absolute bottom-4 left-4 z-10 max-w-[17rem] rounded-2xl border border-white/70 bg-white/92 p-4 shadow-lg backdrop-blur-md">
                 <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">地图说明</p>
-                <h4 className="mb-2 text-sm font-black text-slate-900">成都核心路口实时态势</h4>
+                <h4 className="mb-1 text-sm font-black text-slate-900">成都核心路口实时态势</h4>
                 <p className="text-[11px] leading-relaxed text-slate-500">
                   当前地图已回退到稳定的 2D 底图链路，用于优先保证高德地图正常显示和路口标记刷新。
                 </p>
@@ -420,7 +483,7 @@ export default function MapView() {
           </div>
         </div>
 
-        <div className="flex h-full flex-col space-y-6">
+        <div className="hidden">
           <div className="console-card flex min-h-0 flex-1 flex-col bg-white">
             <div className="border-b border-slate-50 p-6">
               <h3 className="text-sm font-black uppercase tracking-widest text-slate-900">路口列表</h3>

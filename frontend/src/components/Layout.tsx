@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
@@ -31,7 +31,25 @@ const pageTitles: Record<string, string> = {
 export default function Layout({ children }: { children: ReactElement }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const user = JSON.parse(localStorage.getItem('user') || '{"displayName":"管理员","username":"admin_traffic"}');
+  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('user') || '{"displayName":"管理员","username":"admin_traffic"}'));
+
+  useEffect(() => {
+    const syncUser = (event?: Event) => {
+      const customEvent = event as CustomEvent | undefined;
+      if (customEvent?.detail) {
+        setUser(customEvent.detail);
+        return;
+      }
+      setUser(JSON.parse(localStorage.getItem('user') || '{"displayName":"管理员","username":"admin_traffic"}'));
+    };
+
+    window.addEventListener('traffic:user-updated', syncUser);
+    window.addEventListener('storage', syncUser);
+    return () => {
+      window.removeEventListener('traffic:user-updated', syncUser);
+      window.removeEventListener('storage', syncUser);
+    };
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -137,12 +155,20 @@ export default function Layout({ children }: { children: ReactElement }) {
               onClick={handleUserInfoClick}
               className="flex min-w-0 items-center gap-3 rounded-2xl border border-slate-200/70 bg-white px-3 py-2 text-left shadow-sm transition-all hover:border-brand-200 hover:bg-brand-50/60 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-brand-700/50 dark:hover:bg-slate-800"
             >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 font-bold text-brand-600 ring-1 ring-slate-200/50 dark:bg-slate-800 dark:ring-slate-700">
-                {user.displayName.slice(0, 1)}
-              </div>
+              {user.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt="用户头像"
+                  className="h-10 w-10 shrink-0 rounded-xl bg-slate-50 object-cover ring-1 ring-slate-200/50 dark:bg-slate-800 dark:ring-slate-700"
+                />
+              ) : (
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 font-bold text-brand-600 ring-1 ring-slate-200/50 dark:bg-slate-800 dark:ring-slate-700">
+                  {(user.displayName || user.nickname || user.username || 'U').slice(0, 1)}
+                </div>
+              )}
               <div className="min-w-0">
                 <div className="mb-1 max-w-36 truncate text-sm font-bold leading-none text-slate-800 dark:text-slate-100">
-                  {user.displayName}
+                  {user.displayName || user.nickname || user.username}
                 </div>
                 <div className="max-w-36 truncate text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                   {user.username}
