@@ -11,6 +11,7 @@ import {
   Settings as SettingsIcon,
 } from 'lucide-react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useToast } from './ToastProvider';
 
 const navItems = [
   { path: '/dashboard', label: '控制台总览', icon: LayoutDashboard },
@@ -29,6 +30,7 @@ const pageTitles: Record<string, string> = {
 };
 
 export default function Layout({ children }: { children: ReactElement }) {
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('user') || '{"displayName":"管理员","username":"admin_traffic"}'));
@@ -54,6 +56,7 @@ export default function Layout({ children }: { children: ReactElement }) {
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    showToast('已安全退出登录', 'success');
     navigate('/login');
   };
 

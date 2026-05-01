@@ -17,6 +17,7 @@ import {
   User,
 } from 'lucide-react';
 import api from '../api';
+import { useToast } from '../components/ToastProvider';
 
 type SettingsSection = 'overview' | 'password' | 'archive' | 'docs';
 type ThemeMode = 'light' | 'dark' | 'system';
@@ -102,6 +103,7 @@ function formatLoginIp(value?: string | null) {
 }
 
 export default function Settings() {
+  const { showToast } = useToast();
   const location = useLocation();
   const storedUser = JSON.parse(localStorage.getItem('user') || '{"displayName":"管理员","username":"admin_traffic"}');
   const [activeSection, setActiveSection] = useState<SettingsSection>(getStoredSection);
@@ -171,14 +173,17 @@ export default function Settings() {
   const handleChangePassword = async () => {
     if (user.isPasswordSet && !pwForm.oldPassword) {
       setPwMsg({ text: '请输入当前密码', ok: false });
+      showToast('请输入当前密码', 'error');
       return;
     }
     if (!pwForm.newPassword || pwForm.newPassword.length < 6) {
       setPwMsg({ text: '新密码至少需要 6 位', ok: false });
+      showToast('新密码至少需要 6 位', 'error');
       return;
     }
     if (pwForm.newPassword !== pwForm.confirm) {
       setPwMsg({ text: '两次输入的新密码不一致', ok: false });
+      showToast('两次输入的新密码不一致', 'error');
       return;
     }
 
@@ -191,9 +196,11 @@ export default function Settings() {
       setUser(res.data.user);
       localStorage.setItem('user', JSON.stringify(res.data.user));
       setPwMsg({ text: user.isPasswordSet ? '密码修改成功' : '登录密码设置成功', ok: true });
+      showToast(user.isPasswordSet ? '密码修改成功' : '登录密码设置成功', 'success');
       setPwForm({ oldPassword: '', newPassword: '', confirm: '' });
     } catch (err: any) {
       setPwMsg({ text: err.response?.data?.error || '密码更新失败，请重试', ok: false });
+      showToast(err.response?.data?.error || '密码更新失败，请重试', 'error');
     } finally {
       setTimeout(() => setPwLoading(false), 600);
     }
@@ -202,6 +209,7 @@ export default function Settings() {
   const handleSaveProfile = async () => {
     if (!profileForm.nickname.trim()) {
       setProfileMsg({ text: '请输入昵称', ok: false });
+      showToast('请输入昵称', 'error');
       return;
     }
 
@@ -221,8 +229,10 @@ export default function Settings() {
       localStorage.setItem('user', JSON.stringify(res.data.user));
       window.dispatchEvent(new CustomEvent('traffic:user-updated', { detail: res.data.user }));
       setProfileMsg({ text: '用户信息已保存', ok: true });
+      showToast('用户信息已保存', 'success');
     } catch (err: any) {
       setProfileMsg({ text: err.response?.data?.error || '用户信息保存失败，请重试', ok: false });
+      showToast(err.response?.data?.error || '用户信息保存失败，请重试', 'error');
     } finally {
       setProfileLoading(false);
     }
@@ -231,6 +241,7 @@ export default function Settings() {
   const saveInlineProfile = async () => {
     if (!profileForm.nickname.trim()) {
       setProfileMsg({ text: '请输入显示名称', ok: false });
+      showToast('请输入显示名称', 'error');
       return;
     }
 
@@ -250,9 +261,11 @@ export default function Settings() {
       localStorage.setItem('user', JSON.stringify(res.data.user));
       window.dispatchEvent(new CustomEvent('traffic:user-updated', { detail: res.data.user }));
       setProfileMsg({ text: '用户信息已保存', ok: true });
+      showToast('用户信息已保存', 'success');
       setProfileEditing(false);
     } catch (err: any) {
       setProfileMsg({ text: err.response?.data?.error || '用户信息保存失败，请重试', ok: false });
+      showToast(err.response?.data?.error || '用户信息保存失败，请重试', 'error');
     } finally {
       setProfileLoading(false);
     }
@@ -267,6 +280,7 @@ export default function Settings() {
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       setProfileMsg({ text: '请选择图片文件', ok: false });
+      showToast('请选择图片文件', 'error');
       return;
     }
 
@@ -275,11 +289,13 @@ export default function Settings() {
       const result = typeof reader.result === 'string' ? reader.result : '';
       if (!result) {
         setProfileMsg({ text: '头像读取失败', ok: false });
+        showToast('头像读取失败', 'error');
         return;
       }
       setProfileForm((current) => ({ ...current, avatarUrl: result }));
       setProfileEditing(true);
       setProfileMsg({ text: '头像已选择，保存后生效', ok: true });
+      showToast('头像已选择，保存后生效', 'success');
     };
     reader.readAsDataURL(file);
     event.target.value = '';
@@ -311,6 +327,7 @@ export default function Settings() {
       ...current,
     ].slice(0, 10));
     window.open(`http://localhost:3001/api/report/export?${params.toString()}&token=${token}`);
+    showToast('历史 CSV 导出已开始', 'success');
   };
 
   const handlePredictExport = () => {
@@ -329,6 +346,7 @@ export default function Settings() {
       ...current,
     ].slice(0, 10));
     window.open(`http://localhost:3001/api/report/predict-export?${params.toString()}&token=${token}`);
+    showToast('预测数据导出已开始', 'success');
   };
 
   const navItems = [

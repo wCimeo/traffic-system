@@ -14,6 +14,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import api from '../api';
+import { useToast } from '../components/ToastProvider';
 
 type IncidentStatus = 'reported' | 'active' | 'resolved' | 'ignored';
 
@@ -67,6 +68,7 @@ const FILTER_ITEMS: Array<{ key: 'all' | IncidentStatus; label: string; icon: an
 ];
 
 export default function Incidents() {
+  const { showToast } = useToast();
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [filter, setFilter] = useState<'all' | IncidentStatus>('all');
@@ -137,19 +139,38 @@ export default function Incidents() {
       });
       setShowForm(false);
       await loadIncidents();
+      showToast('事件上报成功', 'success');
+    } catch {
+      showToast('事件上报失败，请稍后重试', 'error');
     } finally {
       setSubmitting(false);
     }
   };
 
   const updateIncidentStatus = async (id: number, status: IncidentStatus, handlerId?: string) => {
-    await api.put(`/api/incidents/${id}`, { status, handler_id: handlerId || '' });
-    await loadIncidents();
+    try {
+      await api.put(`/api/incidents/${id}`, { status, handler_id: handlerId || '' });
+      await loadIncidents();
+      const labelMap: Record<IncidentStatus, string> = {
+        reported: '待受理',
+        active: '处理中',
+        resolved: '已解决',
+        ignored: '已忽略',
+      };
+      showToast(`事件状态已更新为${labelMap[status]}`, 'success');
+    } catch {
+      showToast('状态更新失败，请稍后重试', 'error');
+    }
   };
 
   const handleDelete = async (id: number) => {
-    await api.delete(`/api/incidents/${id}`);
-    await loadIncidents();
+    try {
+      await api.delete(`/api/incidents/${id}`);
+      await loadIncidents();
+      showToast('事件已删除', 'success');
+    } catch {
+      showToast('删除失败，请稍后重试', 'error');
+    }
   };
 
   const seedMockData = async () => {
@@ -157,6 +178,9 @@ export default function Incidents() {
     try {
       await api.post('/api/incidents/mock-seed', { count: 18 });
       await loadIncidents();
+      showToast('模拟事件已生成', 'success');
+    } catch {
+      showToast('模拟事件生成失败', 'error');
     } finally {
       setSeeding(false);
     }

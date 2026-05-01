@@ -14,6 +14,7 @@ import {
   Gauge
 } from 'lucide-react';
 import api from '../api';
+import { useToast } from '../components/ToastProvider';
 
 const NODE_OPTIONS = ['A1','B2','C3','D4','E5','F6','G7','H8','I9','J10','K11'];
 
@@ -26,6 +27,7 @@ const STATUS_LABEL: Record<number, { label: string; color: string; bg: string }>
 };
 
 export default function Dashboard() {
+  const { showToast } = useToast();
   const [latest, setLatest] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [predictions, setPredictions] = useState<any[]>([]);
@@ -86,8 +88,10 @@ export default function Dashboard() {
     try {
       await api.post('/api/predict/trigger');
       await loadPredictions();
+      showToast('全域预测已刷新', 'success');
     } catch (e) {
       console.error(e);
+      showToast('预测触发失败，请稍后重试', 'error');
     } finally {
       setTimeout(() => setPredicting(false), 1500);
     }

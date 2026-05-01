@@ -14,6 +14,7 @@ import {
   Zap,
 } from 'lucide-react';
 import api from '../api';
+import { useToast } from '../components/ToastProvider';
 
 type LoginMode = 'password' | 'phone' | 'register';
 
@@ -23,6 +24,7 @@ type CaptchaState = {
 };
 
 export default function Login() {
+  const { showToast } = useToast();
   const [mode, setMode] = useState<LoginMode>('password');
   const [username, setUsername] = useState('admin_traffic');
   const [password, setPassword] = useState('');
@@ -81,8 +83,10 @@ export default function Login() {
         captchaId: captchaData.captchaId,
       });
       persistLogin(res.data);
+      showToast('登录成功', 'success');
     } catch (err: any) {
       setError(err.response?.data?.error || '登录失败，请稍后重试');
+      showToast(err.response?.data?.error || '登录失败，请稍后重试', 'error');
       await loadCaptcha();
     } finally {
       setLoading(false);
@@ -106,10 +110,12 @@ export default function Login() {
         captchaId: captchaData.captchaId,
       });
       setNotice(res.data.message || '验证码已发送');
+      showToast(res.data.message || '验证码已发送', 'success');
       setCountdown(60);
       await loadCaptcha();
     } catch (err: any) {
       setError(err.response?.data?.error || '验证码发送失败');
+      showToast(err.response?.data?.error || '验证码发送失败', 'error');
       await loadCaptcha();
     } finally {
       setSendingSms(false);
@@ -128,8 +134,10 @@ export default function Login() {
     try {
       const res = await api.post('/api/auth/phone-login', { phone, smsCode });
       persistLogin(res.data);
+      showToast('登录成功', 'success');
     } catch (err: any) {
       setError(err.response?.data?.error || '登录失败，请稍后重试');
+      showToast(err.response?.data?.error || '登录失败，请稍后重试', 'error');
     } finally {
       setLoading(false);
     }
@@ -159,8 +167,10 @@ export default function Login() {
         captchaId: captchaData.captchaId,
       });
       persistLogin(res.data);
+      showToast('注册并登录成功', 'success');
     } catch (err: any) {
       setError(err.response?.data?.error || '注册失败，请稍后重试');
+      showToast(err.response?.data?.error || '注册失败，请稍后重试', 'error');
       await loadCaptcha();
     } finally {
       setLoading(false);

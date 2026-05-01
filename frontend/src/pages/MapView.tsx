@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Info, Layers, Maximize2, Minimize2, Navigation, RefreshCw } from 'lucide-react';
 import api from '../api';
+import { useToast } from '../components/ToastProvider';
 
 declare global {
   interface Window {
@@ -122,6 +123,7 @@ const loadAMapSdk = async () => {
 };
 
 export default function MapView() {
+  const { showToast } = useToast();
   const mapRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapShellRef = useRef<HTMLDivElement>(null);
@@ -387,14 +389,20 @@ export default function MapView() {
       window.requestAnimationFrame(() => mapRef.current?.resize?.());
     } catch (error) {
       console.error('Fullscreen toggle failed', error);
+      showToast('全屏切换失败', 'error');
     }
   };
 
   const handleRefresh = async () => {
-    const data = await loadLatest();
-    updateMarkers(data);
-    if (selectedNode?.node.id) {
-      focusNode(selectedNode.node.id, data);
+    try {
+      const data = await loadLatest();
+      updateMarkers(data);
+      if (selectedNode?.node.id) {
+        focusNode(selectedNode.node.id, data);
+      }
+      showToast('地图数据已刷新', 'success');
+    } catch {
+      showToast('地图刷新失败，请稍后重试', 'error');
     }
   };
 
