@@ -243,6 +243,22 @@ router.post('/sms/send', async (req, res) => {
     console.log(`[模拟短信] 手机号 ${normalizedPhone} 的验证码是：${code}，10分钟内有效`);
     res.json({ success: true, message: '验证码已发送（开发模式请查看后端控制台）' });
 });
+router.post('/sms/send-profile', requireAuth, async (req, res) => {
+    const phone = normalizePhone(req.body.phone || '');
+    if (!/^1\d{10}$/.test(phone)) {
+        return res.status(400).json({ success: false, error: '请输入有效的手机号' });
+    }
+    const ip = getClientIp(req);
+    const rateKey = `sms:rate:${ip}`;
+    if (await cacheGet(rateKey)) {
+        return res.status(429).json({ success: false, error: '发送过于频繁，请稍后再试' });
+    }
+    const code = randomDigits(6);
+    await cacheSet(`sms:${phone}`, code, SMS_TTL_SECONDS);
+    await cacheSet(rateKey, '1', SMS_RATE_LIMIT_SECONDS);
+    console.log(`[模拟短信] 个人资料绑定手机号 ${phone} 的验证码是：${code}`);
+    res.json({ success: true, message: '验证码已发送（开发模式请查看后端控制台）', devCode: code });
+});
 router.post('/phone-login', async (req, res) => {
     const { phone, smsCode } = req.body;
     const normalizedPhone = normalizePhone(phone);
@@ -275,6 +291,30 @@ router.post('/phone-login', async (req, res) => {
     catch (err) {
         res.status(500).json({ success: false, error: String(err) });
     }
+});
+router.post('/phone/bind', requireAuth, async (req, res) => {
+    const phone = normalizePhone(req.body.phone || '');
+    const smsCode = String(req.body.smsCode || '').trim();
+    const originalPhone = normalizePhone(req.user?.phone || '');
+    if (!/^1\d{10}$/.test(phone)) {
+        return res.status(400).json({ success: false, error: '请输入有效的手机号' });
+    }
+    if (!smsCode) {
+        return res.status(400).json({ success: false, error: '请输入短信验证码' });
+    }
+    const expected = await cacheGet(`sms:${phone}`);
+    if (!expected || expected !== smsCode) {
+        return res.status(400).json({ success: false, error: '短信验证码错误或已过期' });
+    }
+    const [existing] = await db_1.default.query('SELECT id FROM users WHERE phone = ? AND id <> ? LIMIT 1', [phone, req.user.id]);
+    if (existing.length > 0) {
+        return res.status(409).json({ success: false, error: '手机号已被占用' });
+    }
+    await db_1.default.query('UPDATE users SET phone = ? WHERE id = ?', [phone, req.user.id]);
+    if (phone !== originalPhone)
+        await cacheDelete(`sms:${phone}`);
+    const [rows] = await db_1.default.query('SELECT * FROM users WHERE id = ?', [req.user.id]);
+    res.json({ success: true, user: serializeUser(rows[0]) });
 });
 router.post('/register', async (req, res) => {
     const { username, password, confirmPassword, phone, captchaId, captcha } = req.body;

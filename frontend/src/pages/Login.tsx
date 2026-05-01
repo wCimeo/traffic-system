@@ -1,52 +1,53 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import {
-  ArrowRight,
-  KeyRound,
-  Lock,
-  MessageSquareText,
-  Phone,
-  Radio,
-  RefreshCw,
-  ShieldCheck,
-  User,
-  Zap,
-} from 'lucide-react';
+import { ArrowRight, Lock, MessageSquareText, Phone, Radio, RefreshCw, ShieldCheck, User, Zap } from 'lucide-react';
 import api from '../api';
 import { useToast } from '../components/ToastProvider';
 
 type LoginMode = 'password' | 'phone' | 'register';
-
-type CaptchaState = {
-  captchaId: string;
-  svg: string;
-};
+type CaptchaState = { captchaId: string; svg: string; expiresIn?: number };
 
 export default function Login() {
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const [mode, setMode] = useState<LoginMode>('password');
-  const [username, setUsername] = useState('admin_traffic');
+
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [registerUsername, setRegisterUsername] = useState('');
-  const [registerPassword, setRegisterPassword] = useState('');
-  const [registerConfirm, setRegisterConfirm] = useState('');
-  const [registerPhone, setRegisterPhone] = useState('');
   const [phone, setPhone] = useState('');
   const [smsCode, setSmsCode] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+  const [registerConfirm, setRegisterConfirm] = useState('');
   const [captcha, setCaptcha] = useState('');
   const [captchaData, setCaptchaData] = useState<CaptchaState | null>(null);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [sendingSms, setSendingSms] = useState(false);
   const [countdown, setCountdown] = useState(0);
-  const navigate = useNavigate();
+  const [captchaCountdown, setCaptchaCountdown] = useState(60);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const isRegisterWithPhone = mode === 'register' && phone.trim().length > 0;
+  const submitLabel = useMemo(() => {
+    if (loading) return '正在验证...';
+    if (mode === 'register') return '创建账号并登录';
+    if (mode === 'phone') return '手机验证码登录';
+    return '账号密码登录';
+  }, [loading, mode]);
+
+  const persistLogin = (data: any) => {
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('user', JSON.stringify(data.user));
+    navigate(data.needSetPassword ? '/settings?section=password' : '/dashboard');
+  };
 
   const loadCaptcha = async () => {
     const res = await api.get('/api/auth/captcha');
-    setCaptchaData({ captchaId: res.data.captchaId, svg: res.data.svg });
+    setCaptchaData({ captchaId: res.data.captchaId, svg: res.data.svg, expiresIn: res.data.expiresIn });
     setCaptcha('');
+    setCaptchaCountdown(60);
   };
 
   useEffect(() => {
@@ -55,137 +56,122 @@ export default function Login() {
 
   useEffect(() => {
     if (countdown <= 0) return;
-    const timer = window.setTimeout(() => setCountdown((current) => current - 1), 1000);
-    return () => window.clearTimeout(timer);
+    const t = window.setTimeout(() => setCountdown((v) => v - 1), 1000);
+    return () => window.clearTimeout(t);
   }, [countdown]);
 
-  const persistLogin = (data: any) => {
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('user', JSON.stringify(data.user));
-    navigate(data.needSetPassword ? '/settings?section=password' : '/dashboard');
-  };
-
-  const handlePasswordLogin = async () => {
-    if (!username || !password || !captcha) {
-      setError('请填写账号、密码和图形验证码');
+  useEffect(() => {
+    if (captchaCountdown <= 0) {
+      loadCaptcha().catch(() => null);
       return;
     }
+    const t = window.setTimeout(() => setCaptchaCountdown((v) => v - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [captchaCountdown]);
+
+  const sendSms = async () => {
+    if (!phone.trim()) return setError('请先填写手机号');
+    if (!captcha.trim()) return setError('请先填写图形验证码，再获取短信验证码');
     if (!captchaData) return;
-
-    setLoading(true);
-    setError('');
-    setNotice('');
-    try {
-      const res = await api.post('/api/auth/login', {
-        username,
-        password,
-        captcha,
-        captchaId: captchaData.captchaId,
-      });
-      persistLogin(res.data);
-      showToast('登录成功', 'success');
-    } catch (err: any) {
-      setError(err.response?.data?.error || '登录失败，请稍后重试');
-      showToast(err.response?.data?.error || '登录失败，请稍后重试', 'error');
-      await loadCaptcha();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSendSms = async () => {
-    if (!phone || !captcha) {
-      setError('请先填写手机号和图形验证码');
-      return;
-    }
-    if (!captchaData) return;
-
     setSendingSms(true);
     setError('');
     setNotice('');
     try {
       const res = await api.post('/api/auth/sms/send', {
-        phone,
-        captcha,
+        phone: phone.trim(),
+        captcha: captcha.trim(),
         captchaId: captchaData.captchaId,
       });
       setNotice(res.data.message || '验证码已发送');
       showToast(res.data.message || '验证码已发送', 'success');
       setCountdown(60);
-      await loadCaptcha();
     } catch (err: any) {
-      setError(err.response?.data?.error || '验证码发送失败');
-      showToast(err.response?.data?.error || '验证码发送失败', 'error');
-      await loadCaptcha();
+      const msg = err.response?.data?.error || '验证码发送失败';
+      setError(msg);
+      showToast(msg, 'error');
     } finally {
       setSendingSms(false);
     }
   };
 
-  const handlePhoneLogin = async () => {
-    if (!phone || !smsCode) {
-      setError('请填写手机号和短信验证码');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    setNotice('');
-    try {
-      const res = await api.post('/api/auth/phone-login', { phone, smsCode });
-      persistLogin(res.data);
-      showToast('登录成功', 'success');
-    } catch (err: any) {
-      setError(err.response?.data?.error || '登录失败，请稍后重试');
-      showToast(err.response?.data?.error || '登录失败，请稍后重试', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleRegister = async () => {
-    if (!registerUsername || !registerPassword || !registerConfirm || !captcha) {
-      setError('请填写用户名、密码、确认密码和图形验证码');
-      return;
+    if (!username.trim() || !registerPassword || !registerConfirm || !captcha.trim()) {
+      return setError('请填写用户名、密码、确认密码和图形验证码');
     }
-    if (registerPassword !== registerConfirm) {
-      setError('两次输入的密码不一致');
-      return;
-    }
+    if (registerPassword !== registerConfirm) return setError('两次输入的密码不一致');
+    if (isRegisterWithPhone && !smsCode.trim()) return setError('已填写手机号，请先填写短信验证码');
     if (!captchaData) return;
-
     setLoading(true);
     setError('');
     setNotice('');
     try {
       const res = await api.post('/api/auth/register', {
-        username: registerUsername,
+        username: username.trim(),
         password: registerPassword,
         confirmPassword: registerConfirm,
-        phone: registerPhone,
-        captcha,
+        phone: phone.trim(),
+        smsCode: smsCode.trim(),
+        captcha: captcha.trim(),
         captchaId: captchaData.captchaId,
       });
       persistLogin(res.data);
       showToast('注册并登录成功', 'success');
     } catch (err: any) {
-      setError(err.response?.data?.error || '注册失败，请稍后重试');
-      showToast(err.response?.data?.error || '注册失败，请稍后重试', 'error');
+      const msg = err.response?.data?.error || '注册失败，请稍后重试';
+      setError(msg);
+      showToast(msg, 'error');
       await loadCaptcha();
     } finally {
       setLoading(false);
     }
   };
 
-  const submit = () => {
-    if (mode === 'password') {
-      handlePasswordLogin();
-    } else if (mode === 'phone') {
-      handlePhoneLogin();
-    } else {
-      handleRegister();
+  const handlePasswordLogin = async () => {
+    if (!username.trim() || !password || !captcha.trim()) return setError('请填写用户名、密码和图形验证码');
+    if (!captchaData) return;
+    setLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      const res = await api.post('/api/auth/login', {
+        username: username.trim(),
+        password,
+        captcha: captcha.trim(),
+        captchaId: captchaData.captchaId,
+      });
+      persistLogin(res.data);
+      showToast('登录成功', 'success');
+    } catch (err: any) {
+      const msg = err.response?.data?.error || '登录失败，请稍后重试';
+      setError(msg);
+      showToast(msg, 'error');
+      await loadCaptcha();
+    } finally {
+      setLoading(false);
     }
   };
+
+  const handlePhoneLogin = async () => {
+    if (!phone.trim() || !captcha.trim() || !smsCode.trim()) return setError('请填写手机号、图形验证码和短信验证码');
+    if (!captchaData) return;
+    setLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      const res = await api.post('/api/auth/phone-login', { phone: phone.trim(), smsCode: smsCode.trim() });
+      persistLogin(res.data);
+      showToast('登录成功', 'success');
+    } catch (err: any) {
+      const msg = err.response?.data?.error || '登录失败，请稍后重试';
+      setError(msg);
+      showToast(msg, 'error');
+      await loadCaptcha();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submit = () => (mode === 'register' ? handleRegister() : mode === 'phone' ? handlePhoneLogin() : handlePasswordLogin());
 
   return (
     <div className="flex min-h-screen w-screen overflow-hidden bg-slate-50 font-sans">
@@ -194,37 +180,16 @@ export default function Login() {
           <div className="absolute right-20 top-20 h-96 w-96 rounded-full bg-brand-500 blur-[120px]" />
           <div className="absolute bottom-20 left-20 h-64 w-64 rounded-full bg-emerald-400 opacity-40 blur-[100px]" />
         </div>
-
-        <motion.div
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.8 }}
-          className="relative z-10"
-        >
+        <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }} className="relative z-10">
           <div className="mb-16 flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-white shadow-lg shadow-brand-500/20">
               <Radio className="h-6 w-6 stroke-[2.5px]" />
             </div>
             <span className="text-xl font-black uppercase tracking-tighter text-white">Traffic Matrix</span>
           </div>
-
-          <h1 className="mb-8 text-6xl font-black leading-[0.95] tracking-tight text-white">
-            安全身份认证
-            <br />
-            <span className="text-brand-500">统一入口</span>
-          </h1>
-
-          <p className="mb-12 max-w-md text-lg font-medium leading-relaxed text-slate-400">
-            支持账号密码与手机验证码登录，图形验证码和 7 天免密凭证共同保护后台控制台。
-          </p>
-
+          <h1 className="mb-8 text-6xl font-black leading-[0.95] tracking-tight text-white">安全身份认证</h1>
           <div className="grid grid-cols-2 gap-4">
-            {[
-              { icon: ShieldCheck, label: '图形校验', desc: 'Captcha' },
-              { icon: MessageSquareText, label: '短信模拟', desc: 'Dev SMS' },
-              { icon: KeyRound, label: 'BCrypt', desc: 'Password Hash' },
-              { icon: Zap, label: '7 天免密', desc: 'Session Token' },
-            ].map((item) => (
+            {[{ icon: ShieldCheck, label: '图形校验', desc: 'Captcha' }, { icon: MessageSquareText, label: '短信模拟', desc: 'Dev SMS' }, { icon: Lock, label: 'BCrypt', desc: 'Password Hash' }, { icon: Zap, label: '会话令牌', desc: 'Session Token' }].map((item) => (
               <div key={item.label} className="rounded-3xl border border-white/10 bg-white/5 p-5">
                 <div className="mb-2 flex items-center gap-2">
                   <item.icon className="h-3 w-3 text-brand-400" />
@@ -241,205 +206,104 @@ export default function Login() {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
           <div className="mb-8">
             <h2 className="text-3xl font-black tracking-tight text-slate-900">登录控制台</h2>
-            <p className="mt-2 text-sm font-medium text-slate-400">请选择一种身份验证方式</p>
           </div>
 
-          <div className="mb-8 grid grid-cols-3 rounded-2xl bg-slate-100 p-1">
-            {[
-              { key: 'password' as LoginMode, label: '账号密码', icon: Lock },
-              { key: 'phone' as LoginMode, label: '手机验证码', icon: Phone },
-              { key: 'register' as LoginMode, label: '注册账号', icon: User },
-            ].map((item) => {
-              const active = mode === item.key;
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => {
-                    setMode(item.key);
-                    setError('');
-                    setNotice('');
-                  }}
-                  className={`flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black transition-all ${
-                    active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  <item.icon className="h-4 w-4" />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
+          {mode !== 'register' && (
+            <div className="mb-8 grid grid-cols-2 rounded-2xl bg-slate-100 p-1">
+              {[{ key: 'password' as LoginMode, label: '账号密码', icon: Lock }, { key: 'phone' as LoginMode, label: '手机验证码', icon: Phone }].map((item) => {
+                const active = mode === item.key;
+                return (
+                  <button key={item.key} type="button" onClick={() => { setMode(item.key); setError(''); setNotice(''); }} className={`flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black transition-all ${active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           <div className="space-y-5">
-            {mode === 'password' ? (
-              <>
-                <div className="space-y-2">
-                  <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">用户名 / 手机号</label>
-                  <div className="group relative">
-                    <User className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
-                    <input
-                      className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder="请输入用户名或手机号"
-                    />
-                  </div>
+            {mode !== 'phone' && (
+              <div className="space-y-2">
+                <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">用户名</label>
+                <div className="group relative">
+                  <User className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
+                  <input className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="4-32 位字母、数字或下划线" />
                 </div>
-
-                <div className="space-y-2">
-                  <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">登录密码</label>
-                  <div className="group relative">
-                    <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
-                    <input
-                      type="password"
-                      className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12"
-                      placeholder="请输入密码"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && submit()}
-                    />
-                  </div>
+              </div>
+            )}
+            {(mode === 'register' || mode === 'phone') && (
+              <div className="space-y-2">
+                <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">手机号{mode === 'register' ? '（选填）' : ''}</label>
+                <div className="group relative">
+                  <Phone className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
+                  <input className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="请输入 11 位手机号" />
                 </div>
-              </>
-            ) : mode === 'phone' ? (
-              <>
-                <div className="space-y-2">
-                  <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">手机号</label>
-                  <div className="group relative">
-                    <Phone className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
-                    <input
-                      className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="请输入 11 位手机号"
-                    />
-                  </div>
+              </div>
+            )}
+            {mode !== 'phone' && (
+              <div className="space-y-2">
+                <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">{mode === 'register' ? '密码' : '登录密码'}</label>
+                <div className="group relative">
+                  <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
+                  <input type="password" className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12" value={mode === 'register' ? registerPassword : password} onChange={(e) => (mode === 'register' ? setRegisterPassword(e.target.value) : setPassword(e.target.value))} placeholder="至少 6 位密码" />
                 </div>
-              </>
-            ) : (
-              <>
-                <div className="space-y-2">
-                  <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">用户名</label>
-                  <div className="group relative">
-                    <User className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
-                    <input
-                      className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12"
-                      value={registerUsername}
-                      onChange={(e) => setRegisterUsername(e.target.value)}
-                      placeholder="4-32 位字母、数字或下划线"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">手机号（可选）</label>
-                  <div className="group relative">
-                    <Phone className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
-                    <input
-                      className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12"
-                      value={registerPhone}
-                      onChange={(e) => setRegisterPhone(e.target.value)}
-                      placeholder="用于后续验证码登录，可稍后绑定"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">密码</label>
-                    <div className="group relative">
-                      <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
-                      <input
-                        type="password"
-                        className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12"
-                        value={registerPassword}
-                        onChange={(e) => setRegisterPassword(e.target.value)}
-                        placeholder="至少 6 位"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">确认密码</label>
-                    <input
-                      type="password"
-                      className="input-base !h-14 border border-slate-100 bg-slate-50"
-                      value={registerConfirm}
-                      onChange={(e) => setRegisterConfirm(e.target.value)}
-                      placeholder="再次输入"
-                      onKeyDown={(e) => e.key === 'Enter' && submit()}
-                    />
-                  </div>
-                </div>
-              </>
+              </div>
+            )}
+            {mode === 'register' && (
+              <div className="space-y-2">
+                <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">确认密码</label>
+                <input type="password" className="input-base !h-14 border border-slate-100 bg-slate-50" value={registerConfirm} onChange={(e) => setRegisterConfirm(e.target.value)} placeholder="再次输入密码" />
+              </div>
             )}
 
             <div className="space-y-2">
               <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">图形验证码</label>
               <div className="flex gap-3">
-                <input
-                  className="input-base !h-14 flex-1 border border-slate-100 bg-slate-50"
-                  value={captcha}
-                  onChange={(e) => setCaptcha(e.target.value)}
-                  placeholder="请输入验证码"
-                />
-                <button
-                  type="button"
-                  onClick={() => loadCaptcha()}
-                  className="flex h-14 w-36 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
-                  title="刷新验证码"
-                >
-                  {captchaData ? (
-                    <span dangerouslySetInnerHTML={{ __html: captchaData.svg }} />
-                  ) : (
-                    <RefreshCw className="h-4 w-4 animate-spin text-slate-400" />
-                  )}
+                <input className="input-base !h-14 flex-1 border border-slate-100 bg-slate-50" value={captcha} onChange={(e) => setCaptcha(e.target.value)} placeholder="请输入图形验证码" />
+                <button type="button" onClick={loadCaptcha} className="flex h-14 w-36 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50" title="刷新验证码">
+                  {captchaData ? <span dangerouslySetInnerHTML={{ __html: captchaData.svg }} /> : <RefreshCw className="h-4 w-4 animate-spin text-slate-400" />}
                 </button>
               </div>
+              <p className="text-xs text-slate-400">图形验证码 {captchaCountdown}s 后自动刷新。</p>
             </div>
 
-            {mode === 'phone' && (
+            {(mode === 'phone' || isRegisterWithPhone) && (
               <div className="space-y-2">
                 <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">短信验证码</label>
                 <div className="flex gap-3">
-                  <input
-                    className="input-base !h-14 flex-1 border border-slate-100 bg-slate-50"
-                    value={smsCode}
-                    onChange={(e) => setSmsCode(e.target.value)}
-                    placeholder="6 位验证码"
-                    onKeyDown={(e) => e.key === 'Enter' && submit()}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSendSms}
-                    disabled={sendingSms || countdown > 0}
-                    className="btn-ghost h-14 w-32 shrink-0 disabled:pointer-events-none disabled:opacity-60"
-                  >
+                  <input className="input-base !h-14 flex-1 border border-slate-100 bg-slate-50" value={smsCode} onChange={(e) => setSmsCode(e.target.value)} placeholder="6 位验证码" />
+                  <button type="button" onClick={sendSms} disabled={sendingSms || countdown > 0} className="btn-ghost h-14 w-32 shrink-0 disabled:pointer-events-none disabled:opacity-60">
                     {countdown > 0 ? `${countdown}s` : sendingSms ? '发送中' : '获取验证码'}
                   </button>
                 </div>
+                <p className="text-xs text-slate-400">短信验证码 60 秒内有效。</p>
               </div>
             )}
 
-            {error && (
-              <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-600">{error}</div>
-            )}
-            {notice && (
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm font-bold text-emerald-700">
-                {notice}
-              </div>
-            )}
+            {error && <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-600">{error}</div>}
+            {notice && <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm font-bold text-emerald-700">{notice}</div>}
 
-            <button
-              onClick={submit}
-              disabled={loading}
-              className="btn-primary !h-14 w-full gap-3 shadow-2xl shadow-slate-900/20"
-            >
-              <span className="font-black uppercase tracking-widest">
-                {loading ? '正在验证...' : mode === 'password' ? '账号密码登录' : mode === 'phone' ? '手机验证码登录 / 注册' : '创建账号并登录'}
-              </span>
+            <button onClick={submit} disabled={loading} className="btn-primary !h-14 w-full gap-3 shadow-2xl shadow-slate-900/20">
+              <span className="font-black uppercase tracking-widest">{submitLabel}</span>
               {!loading && <ArrowRight className="h-4 w-4" />}
             </button>
+
+            {mode === 'register' ? (
+              <p className="text-center text-xs text-slate-500">
+                已有密码？
+                <button type="button" className="ml-1 font-black text-brand-600" onClick={() => setMode('password')}>
+                  点击直接登录
+                </button>
+              </p>
+            ) : (
+              <p className="text-center text-xs text-slate-500">
+                没有账号？
+                <button type="button" className="ml-1 font-black text-brand-600" onClick={() => setMode('register')}>
+                  点击注册账号
+                </button>
+              </p>
+            )}
           </div>
         </motion.div>
       </div>

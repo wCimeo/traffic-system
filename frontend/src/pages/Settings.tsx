@@ -1,15 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useLocation } from 'react-router-dom';
 import {
-  Check,
   BookOpenText,
+  Check,
   ChevronRight,
   Download,
   FileArchive,
   KeyRound,
   Laptop,
   Lock,
+  MessageSquareText,
   Monitor,
   Moon,
   ShieldCheck,
@@ -26,8 +27,6 @@ type CurrentUser = {
   username?: string | null;
   phone?: string | null;
   avatarUrl?: string | null;
-  nickname?: string | null;
-  displayName?: string | null;
   gender?: string | null;
   isPasswordSet?: boolean;
   lastLoginTime?: string | null;
@@ -48,12 +47,12 @@ const NODE_OPTIONS = ['all', 'A1', 'B2', 'C3', 'D4', 'E5', 'F6', 'G7', 'H8', 'I9
 
 function getStoredSection(): SettingsSection {
   const stored = localStorage.getItem(SETTINGS_SECTION_KEY);
-  return stored === 'password' || stored === 'archive' || stored === 'overview' || stored === 'docs' ? stored : 'overview';
+  return stored === 'overview' || stored === 'password' || stored === 'archive' || stored === 'docs' ? stored : 'overview';
 }
 
 function getSectionFromSearch(search: string): SettingsSection | null {
   const section = new URLSearchParams(search).get('section');
-  return section === 'password' || section === 'archive' || section === 'overview' || section === 'docs' ? section : null;
+  return section === 'overview' || section === 'password' || section === 'archive' || section === 'docs' ? section : null;
 }
 
 function getStoredThemeMode(): ThemeMode {
@@ -63,8 +62,8 @@ function getStoredThemeMode(): ThemeMode {
 
 function getStoredExportHistory(): ExportRecord[] {
   try {
-    const stored = JSON.parse(localStorage.getItem(EXPORT_HISTORY_KEY) || '[]');
-    return Array.isArray(stored) ? stored : [];
+    const parsed = JSON.parse(localStorage.getItem(EXPORT_HISTORY_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
@@ -83,7 +82,7 @@ function formatDateTime(value?: string | null) {
   if (!value) return '暂无记录';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '暂无记录';
-  const pad = (number: number) => String(number).padStart(2, '0');
+  const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
@@ -105,27 +104,36 @@ function formatLoginIp(value?: string | null) {
 export default function Settings() {
   const { showToast } = useToast();
   const location = useLocation();
-  const storedUser = JSON.parse(localStorage.getItem('user') || '{"displayName":"管理员","username":"admin_traffic"}');
+  const storedUser: CurrentUser = JSON.parse(localStorage.getItem('user') || '{}');
+
   const [activeSection, setActiveSection] = useState<SettingsSection>(getStoredSection);
   const [themeMode, setThemeMode] = useState<ThemeMode>(getStoredThemeMode);
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
   const [user, setUser] = useState<CurrentUser>(storedUser);
+
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [nodeId, setNodeId] = useState('all');
   const [exportHistory, setExportHistory] = useState<ExportRecord[]>(getStoredExportHistory);
-  const [pwForm, setPwForm] = useState({ oldPassword: '', newPassword: '', confirm: '' });
-  const [pwMsg, setPwMsg] = useState<{ text: string; ok: boolean } | null>(null);
-  const [pwLoading, setPwLoading] = useState(false);
+
   const [profileForm, setProfileForm] = useState({
-    nickname: storedUser.nickname || storedUser.displayName || '',
-    avatarUrl: storedUser.avatarUrl || '',
+    username: storedUser.username || '',
     gender: storedUser.gender || '',
+    avatarUrl: storedUser.avatarUrl || '',
   });
-  const [profileMsg, setProfileMsg] = useState<{ text: string; ok: boolean } | null>(null);
-  const [profileLoading, setProfileLoading] = useState(false);
   const [profileEditing, setProfileEditing] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileMsg, setProfileMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  const [pwForm, setPwForm] = useState({ oldPassword: '', newPassword: '', confirm: '' });
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwMsg, setPwMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
+  const [phoneForm, setPhoneForm] = useState({ phone: storedUser.phone || '', smsCode: '' });
+  const [phoneSending, setPhoneSending] = useState(false);
+  const [phoneCountdown, setPhoneCountdown] = useState(0);
+  const [phoneVerified, setPhoneVerified] = useState(false);
 
   useEffect(() => {
     const section = getSectionFromSearch(location.search);
@@ -141,34 +149,123 @@ export default function Settings() {
   }, [exportHistory]);
 
   useEffect(() => {
-    api.get('/api/auth/me')
-      .then((res) => {
-        setUser(res.data.user);
-        setProfileForm({
-          nickname: res.data.user.nickname || res.data.user.displayName || '',
-          avatarUrl: res.data.user.avatarUrl || '',
-          gender: res.data.user.gender || '',
-        });
-        localStorage.setItem('user', JSON.stringify(res.data.user));
-      })
-      .catch(() => null);
-  }, []);
-
-  useEffect(() => {
     localStorage.setItem(SETTINGS_THEME_KEY, themeMode);
     applyTheme(themeMode);
 
     const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const syncResolvedTheme = () => {
-      const nextTheme = themeMode === 'system' ? (media.matches ? 'dark' : 'light') : themeMode;
-      setResolvedTheme(nextTheme);
+    const sync = () => {
+      const next = themeMode === 'system' ? (media.matches ? 'dark' : 'light') : themeMode;
+      setResolvedTheme(next);
       applyTheme(themeMode);
     };
-
-    syncResolvedTheme();
-    media.addEventListener('change', syncResolvedTheme);
-    return () => media.removeEventListener('change', syncResolvedTheme);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
   }, [themeMode]);
+
+  useEffect(() => {
+    if (phoneCountdown <= 0) return;
+    const timer = window.setTimeout(() => setPhoneCountdown((curr) => curr - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [phoneCountdown]);
+
+  useEffect(() => {
+    api.get('/api/auth/me')
+      .then((res) => {
+        const nextUser: CurrentUser = res.data.user || {};
+        setUser(nextUser);
+        setProfileForm({
+          username: nextUser.username || '',
+          gender: nextUser.gender || '',
+          avatarUrl: nextUser.avatarUrl || '',
+        });
+        setPhoneForm({ phone: nextUser.phone || '', smsCode: '' });
+        localStorage.setItem('user', JSON.stringify(nextUser));
+      })
+      .catch(() => null);
+  }, []);
+
+  const displayName = useMemo(() => user.username || 'user', [user.username]);
+
+  const saveUserToLocal = (nextUser: CurrentUser) => {
+    setUser(nextUser);
+    localStorage.setItem('user', JSON.stringify(nextUser));
+    window.dispatchEvent(new CustomEvent('traffic:user-updated', { detail: nextUser }));
+  };
+
+  const handleSaveProfile = async () => {
+    const username = profileForm.username.trim();
+    if (!username) {
+      setProfileMsg({ text: '请输入用户名', ok: false });
+      showToast('请输入用户名', 'error');
+      return;
+    }
+
+    setProfileLoading(true);
+    try {
+      const res = await api.post('/api/auth/profile', {
+        username,
+        phone: user.phone || '',
+        smsCode: '',
+        avatarUrl: profileForm.avatarUrl.trim(),
+        gender: profileForm.gender,
+      });
+      const nextUser: CurrentUser = res.data.user;
+      saveUserToLocal(nextUser);
+      setProfileForm({
+        username: nextUser.username || '',
+        gender: nextUser.gender || '',
+        avatarUrl: nextUser.avatarUrl || '',
+      });
+      setProfileEditing(false);
+      setProfileMsg({ text: '用户信息已保存', ok: true });
+      showToast('用户信息已保存', 'success');
+    } catch (err: any) {
+      const msg = err.response?.data?.error || '用户信息保存失败，请重试';
+      setProfileMsg({ text: msg, ok: false });
+      showToast(msg, 'error');
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const cancelProfileEdit = () => {
+    setProfileForm({
+      username: user.username || '',
+      gender: user.gender || '',
+      avatarUrl: user.avatarUrl || '',
+    });
+    setProfileEditing(false);
+    setProfileMsg(null);
+  };
+
+  const handleAvatarPick = () => avatarInputRef.current?.click();
+
+  const handleAvatarFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setProfileMsg({ text: '请选择图片文件', ok: false });
+      showToast('请选择图片文件', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      if (!result) {
+        setProfileMsg({ text: '头像读取失败', ok: false });
+        showToast('头像读取失败', 'error');
+        return;
+      }
+      setProfileForm((curr) => ({ ...curr, avatarUrl: result }));
+      setProfileEditing(true);
+      setProfileMsg({ text: '头像已选择，保存后生效', ok: true });
+      showToast('头像已选择，保存后生效', 'success');
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
+  };
 
   const handleChangePassword = async () => {
     if (user.isPasswordSet && !pwForm.oldPassword) {
@@ -193,122 +290,63 @@ export default function Settings() {
         oldPassword: pwForm.oldPassword,
         newPassword: pwForm.newPassword,
       });
-      setUser(res.data.user);
-      localStorage.setItem('user', JSON.stringify(res.data.user));
+      saveUserToLocal(res.data.user);
       setPwMsg({ text: user.isPasswordSet ? '密码修改成功' : '登录密码设置成功', ok: true });
       showToast(user.isPasswordSet ? '密码修改成功' : '登录密码设置成功', 'success');
       setPwForm({ oldPassword: '', newPassword: '', confirm: '' });
     } catch (err: any) {
-      setPwMsg({ text: err.response?.data?.error || '密码更新失败，请重试', ok: false });
-      showToast(err.response?.data?.error || '密码更新失败，请重试', 'error');
+      const msg = err.response?.data?.error || '密码更新失败，请重试';
+      setPwMsg({ text: msg, ok: false });
+      showToast(msg, 'error');
     } finally {
       setTimeout(() => setPwLoading(false), 600);
     }
   };
 
-  const handleSaveProfile = async () => {
-    if (!profileForm.nickname.trim()) {
-      setProfileMsg({ text: '请输入昵称', ok: false });
-      showToast('请输入昵称', 'error');
+  const handleSendPhoneSms = async () => {
+    const phone = String(phoneForm.phone || '').trim();
+    if (!/^1\d{10}$/.test(phone)) {
+      showToast('【手机号验证】请输入有效手机号', 'error');
       return;
     }
-
-    setProfileLoading(true);
+    setPhoneSending(true);
     try {
-      const res = await api.post('/api/auth/profile', {
-        nickname: profileForm.nickname.trim(),
-        avatarUrl: profileForm.avatarUrl.trim(),
-        gender: profileForm.gender,
-      });
-      setUser(res.data.user);
-      setProfileForm({
-        nickname: res.data.user.nickname || res.data.user.displayName || '',
-        avatarUrl: res.data.user.avatarUrl || '',
-        gender: res.data.user.gender || '',
-      });
-      localStorage.setItem('user', JSON.stringify(res.data.user));
-      window.dispatchEvent(new CustomEvent('traffic:user-updated', { detail: res.data.user }));
-      setProfileMsg({ text: '用户信息已保存', ok: true });
-      showToast('用户信息已保存', 'success');
+      const res = await api.post('/api/auth/sms/send-profile', { phone });
+      setPhoneCountdown(60);
+      const devCode = res.data?.devCode ? `（模拟码：${res.data.devCode}）` : '';
+      showToast(`【手机号验证】验证码已发送（60秒内有效）${devCode}`, 'success');
+      return;
+      showToast('【手机号验证】验证码已发送（60秒内有效）', 'success');
     } catch (err: any) {
-      setProfileMsg({ text: err.response?.data?.error || '用户信息保存失败，请重试', ok: false });
-      showToast(err.response?.data?.error || '用户信息保存失败，请重试', 'error');
+      showToast(`【手机号验证】${err.response?.data?.error || '发送失败'}`, 'error');
     } finally {
-      setProfileLoading(false);
+      setPhoneSending(false);
     }
   };
 
-  const saveInlineProfile = async () => {
-    if (!profileForm.nickname.trim()) {
-      setProfileMsg({ text: '请输入显示名称', ok: false });
-      showToast('请输入显示名称', 'error');
+  const handleVerifyPhone = async () => {
+    const phone = String(phoneForm.phone || '').trim();
+    const smsCode = String(phoneForm.smsCode || '').trim();
+    if (!/^1\d{10}$/.test(phone)) {
+      showToast('【手机号验证】请输入有效手机号', 'error');
+      return;
+    }
+    if (!smsCode) {
+      showToast('【手机号验证】请输入短信验证码', 'error');
       return;
     }
 
-    setProfileLoading(true);
     try {
-      const res = await api.post('/api/auth/profile', {
-        nickname: profileForm.nickname.trim(),
-        avatarUrl: profileForm.avatarUrl.trim(),
-        gender: profileForm.gender,
-      });
-      setUser(res.data.user);
-      setProfileForm({
-        nickname: res.data.user.nickname || res.data.user.displayName || '',
-        avatarUrl: res.data.user.avatarUrl || '',
-        gender: res.data.user.gender || '',
-      });
-      localStorage.setItem('user', JSON.stringify(res.data.user));
-      window.dispatchEvent(new CustomEvent('traffic:user-updated', { detail: res.data.user }));
-      setProfileMsg({ text: '用户信息已保存', ok: true });
-      showToast('用户信息已保存', 'success');
-      setProfileEditing(false);
+      const res = await api.post('/api/auth/phone/bind', { phone, smsCode });
+      const nextUser: CurrentUser = res.data.user;
+      saveUserToLocal(nextUser);
+      setPhoneForm({ phone: nextUser.phone || phone, smsCode: '' });
+      setPhoneVerified(true);
+      showToast('【手机号验证】验证通过', 'success');
     } catch (err: any) {
-      setProfileMsg({ text: err.response?.data?.error || '用户信息保存失败，请重试', ok: false });
-      showToast(err.response?.data?.error || '用户信息保存失败，请重试', 'error');
-    } finally {
-      setProfileLoading(false);
+      showToast(`【手机号验证】${err.response?.data?.error || '验证失败'}`, 'error');
+      setPhoneVerified(false);
     }
-  };
-
-  const handleAvatarPick = () => {
-    avatarInputRef.current?.click();
-  };
-
-  const handleAvatarFileChange = (event: any) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      setProfileMsg({ text: '请选择图片文件', ok: false });
-      showToast('请选择图片文件', 'error');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : '';
-      if (!result) {
-        setProfileMsg({ text: '头像读取失败', ok: false });
-        showToast('头像读取失败', 'error');
-        return;
-      }
-      setProfileForm((current) => ({ ...current, avatarUrl: result }));
-      setProfileEditing(true);
-      setProfileMsg({ text: '头像已选择，保存后生效', ok: true });
-      showToast('头像已选择，保存后生效', 'success');
-    };
-    reader.readAsDataURL(file);
-    event.target.value = '';
-  };
-
-  const cancelInlineProfileEdit = () => {
-    setProfileForm({
-      nickname: user.nickname || user.displayName || '',
-      avatarUrl: user.avatarUrl || '',
-      gender: user.gender || '',
-    });
-    setProfileEditing(false);
-    setProfileMsg(null);
   };
 
   const handleExport = () => {
@@ -318,14 +356,13 @@ export default function Settings() {
     if (nodeId) params.append('node_id', nodeId);
     const token = localStorage.getItem('token');
     const scope = nodeId === 'all' ? '全部路口' : `路口 ${nodeId}`;
-    const range =
-      startDate || endDate
-        ? `${startDate || '开始不限'} ~ ${endDate || '结束不限'}`
-        : '全部历史时间';
-    setExportHistory((current) => [
+    const range = startDate || endDate ? `${startDate || '开始不限'} ~ ${endDate || '结束不限'}` : '全部历史时间';
+
+    setExportHistory((curr) => [
       { id: `${Date.now()}`, type: '历史 CSV 导出', time: new Date().toLocaleString('zh-CN'), scope, range },
-      ...current,
+      ...curr,
     ].slice(0, 10));
+
     window.open(`http://localhost:3001/api/report/export?${params.toString()}&token=${token}`);
     showToast('历史 CSV 导出已开始', 'success');
   };
@@ -335,496 +372,223 @@ export default function Settings() {
     if (nodeId) params.append('node_id', nodeId);
     const token = localStorage.getItem('token');
     const scope = nodeId === 'all' ? '全部路口' : `路口 ${nodeId}`;
-    setExportHistory((current) => [
-      {
-        id: `${Date.now()}`,
-        type: '预测数据导出',
-        time: new Date().toLocaleString('zh-CN'),
-        scope,
-        range: '当前数据窗口 + 15/30 分钟预测',
-      },
-      ...current,
+
+    setExportHistory((curr) => [
+      { id: `${Date.now()}`, type: '预测数据导出', time: new Date().toLocaleString('zh-CN'), scope, range: '当前数据窗口 + 15/30 分钟预测' },
+      ...curr,
     ].slice(0, 10));
+
     window.open(`http://localhost:3001/api/report/predict-export?${params.toString()}&token=${token}`);
     showToast('预测数据导出已开始', 'success');
   };
 
-  const navItems = [
-    { key: 'overview' as SettingsSection, label: '用户信息', desc: '账号资料与登录记录', icon: User },
-    { key: 'password' as SettingsSection, label: user.isPasswordSet ? '修改密码' : '设置密码', desc: '账号安全与密码更新', icon: KeyRound },
-    { key: 'archive' as SettingsSection, label: '历史档案导出', desc: '历史路况与数据报表', icon: FileArchive },
+  const navItems: Array<{ key: SettingsSection; label: string; desc: string; icon: typeof User }> = [
+    { key: 'overview', label: '用户信息', desc: '账号资料与登录记录', icon: User },
+    { key: 'password', label: user.isPasswordSet ? '修改密码' : '设置密码', desc: '账号安全与手机号验证', icon: KeyRound },
+    { key: 'archive', label: '历史档案导出', desc: '历史路况与数据报表', icon: FileArchive },
+    { key: 'docs', label: '系统说明', desc: '术语与业务口径说明', icon: BookOpenText },
   ];
 
   const themeOptions: Array<{ key: ThemeMode; label: string; desc: string; icon: typeof Sun }> = [
-    { key: 'light', label: '浅色', desc: '保持明亮控制台外观', icon: Sun },
+    { key: 'light', label: '浅色', desc: '保持明亮控制台风格', icon: Sun },
     { key: 'dark', label: '深色', desc: '切换为低亮度深色界面', icon: Moon },
-    { key: 'system', label: '跟随系统', desc: '自动匹配操作系统主题', icon: Laptop },
+    { key: 'system', label: '跟随系统', desc: '自动匹配系统主题', icon: Laptop },
   ];
 
   return (
-    <div className="space-y-8 pb-10">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+    <div className="space-y-10 pb-12">
+      <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-4xl font-black tracking-tight text-slate-950">系统设置</h1>
-          <p className="mt-2 text-sm font-medium text-slate-500">管理账号资料、安全密码、主题偏好和历史数据导出。</p>
+          <p className="mt-2 text-sm font-medium text-slate-500">管理账号资料、密码安全、主题偏好和数据导出能力。</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-8 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="console-card h-fit bg-white p-4">
+      <div className="grid grid-cols-1 gap-10 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="console-card h-fit bg-white p-5">
           <div className="px-3 pb-4 pt-2">
-            <div className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">系统设置</div>
-            <div className="mt-2 text-sm font-semibold text-slate-500">请选择一个功能模块</div>
+            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">Settings</div>
+            <div className="mt-2 text-lg font-black text-slate-900">控制台偏好与账号安全</div>
           </div>
-
           <div className="space-y-2">
             {navItems.map((item) => {
-              const isActive = activeSection === item.key;
+              const Icon = item.icon;
+              const active = activeSection === item.key;
               return (
                 <button
                   key={item.key}
+                  type="button"
                   onClick={() => setActiveSection(item.key)}
-                  className={`flex w-full items-center gap-4 rounded-[24px] px-4 py-4 text-left transition-all ${
-                    isActive ? 'bg-brand-50 ring-1 ring-brand-100' : 'hover:bg-slate-50'
+                  className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                    active ? 'border-brand-200 bg-brand-50 text-brand-700' : 'border-transparent bg-slate-50 text-slate-600 hover:border-slate-100 hover:bg-white'
                   }`}
                 >
-                  <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${
-                    isActive ? 'bg-white text-brand-600 shadow-sm' : 'bg-slate-50 text-slate-500'
-                  }`}>
-                    <item.icon className="h-5 w-5" />
+                  <div className="flex items-center gap-3">
+                    <Icon className="h-4 w-4" />
+                    <div>
+                      <div className="text-sm font-black">{item.label}</div>
+                      <div className="text-xs font-semibold opacity-70">{item.desc}</div>
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className={`text-sm font-black ${isActive ? 'text-slate-950' : 'text-slate-800'}`}>{item.label}</div>
-                    <div className="mt-1 text-xs font-medium text-slate-500">{item.desc}</div>
-                  </div>
-                  <ChevronRight className={`h-4 w-4 ${isActive ? 'text-brand-600' : 'text-slate-300'}`} />
                 </button>
               );
             })}
-            <button
-              onClick={() => setActiveSection('docs')}
-              className={`flex w-full items-center gap-4 rounded-[24px] px-4 py-4 text-left transition-all ${
-                activeSection === 'docs' ? 'bg-brand-50 ring-1 ring-brand-100' : 'hover:bg-slate-50'
-              }`}
-            >
-              <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${
-                activeSection === 'docs' ? 'bg-white text-brand-600 shadow-sm' : 'bg-slate-50 text-slate-500'
-              }`}>
-                <BookOpenText className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className={`text-sm font-black ${activeSection === 'docs' ? 'text-slate-950' : 'text-slate-800'}`}>系统说明</div>
-                <div className="mt-1 text-xs font-medium text-slate-500">文字说明与术语解释</div>
-              </div>
-              <ChevronRight className={`h-4 w-4 ${activeSection === 'docs' ? 'text-brand-600' : 'text-slate-300'}`} />
-            </button>
           </div>
         </aside>
 
-        <div className="min-w-0">
+        <div>
           <AnimatePresence mode="wait">
             {activeSection === 'overview' && (
-              <motion.div
-                key="overview"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="space-y-8"
-              >
-                {!user.isPasswordSet && (
-                  <button
-                    onClick={() => setActiveSection('password')}
-                    className="flex w-full items-center justify-between rounded-[28px] border border-amber-200 bg-amber-50 p-5 text-left text-amber-800"
-                  >
-                    <div>
-                      <div className="text-sm font-black">请设置密码以保障账户安全</div>
-                      <div className="mt-1 text-xs font-semibold text-amber-700">手机号验证码注册的新用户可以在这里补全登录密码。</div>
-                    </div>
-                    {false && <div>
-                      {profileEditing ? (
-                        <input
-                          className="input-base h-10 w-[220px]"
-                          value={profileForm.nickname}
-                          onChange={(event) => setProfileForm((current) => ({ ...current, nickname: event.target.value }))}
-                          placeholder="请输入显示名称"
-                        />
-                      ) : (
-                        <h3 className="text-xl font-black text-slate-900">{user.displayName || user.nickname || user.username || '用户'}</h3>
-                      )}
-                      <p className="mt-1 text-sm text-slate-500">上次登录时间：{formatDateTime(user.lastLoginTime)}</p>
-                    </div>}
-                    <ChevronRight className="h-5 w-5" />
-                  </button>
-                )}
-
+              <motion.div key="overview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
                 <div className="console-card bg-white p-8">
-                  <div className="mb-8 flex items-start justify-between gap-4">
-                    <button
-                      type="button"
-                      onClick={handleAvatarPick}
-                      className="relative overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 transition-transform hover:scale-[1.02]"
-                    >
-                      <img
-                      src={profileForm.avatarUrl || user.avatarUrl || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(user.displayName || user.username || 'user')}`}
-                      alt="用户头像"
-                      className="h-16 w-16 object-cover"
-                    />
-                      <span className="absolute inset-x-0 bottom-0 bg-slate-900/75 px-2 py-1 text-[10px] font-black text-white">更换头像</span>
-                    </button>
-                    <input
-                      ref={avatarInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleAvatarFileChange}
-                    />
-                    {false && <div>
-                      <h3 className="text-xl font-black text-slate-900">{user.nickname || user.displayName || '用户'}</h3>
-                      <p className="mt-1 text-sm text-slate-500">上次登录时间：{formatDateTime(user.lastLoginTime)}</p>
-                    </div>}
-                    <div>
-                      {profileEditing ? (
-                        <input
-                          className="input-base h-10 w-[220px]"
-                          value={profileForm.nickname}
-                          onChange={(event) => setProfileForm((current) => ({ ...current, nickname: event.target.value }))}
-                          placeholder="请输入显示名称"
+                  <div className="mb-8 flex items-start justify-between gap-6">
+                    <div className="flex items-start gap-4">
+                      <div className="relative">
+                        <img
+                          src={profileForm.avatarUrl || user.avatarUrl || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(displayName)}`}
+                          className="h-20 w-20 rounded-2xl bg-slate-100 object-cover"
+                          alt="avatar"
                         />
-                      ) : (
-                        <h3 className="text-xl font-black text-slate-900">{user.displayName || user.nickname || user.username || '用户'}</h3>
-                      )}
-                      <p className="mt-1 text-sm text-slate-500">上次登录时间：{formatDateTime(user.lastLoginTime)}</p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {profileEditing ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={cancelInlineProfileEdit}
-                            className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-500 transition-colors hover:bg-slate-50"
-                          >
-                            取消
-                          </button>
-                          <button
-                            type="button"
-                            onClick={saveInlineProfile}
-                            disabled={profileLoading}
-                            className="btn-primary h-10 px-4 text-xs disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {profileLoading ? '保存中...' : '保存'}
-                          </button>
-                        </>
-                      ) : (
                         <button
                           type="button"
-                          onClick={() => setProfileEditing(true)}
-                          className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 transition-colors hover:bg-slate-50"
-                        >
-                          编辑资料
+                          onClick={handleAvatarPick}
+                          className="absolute -bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-slate-900 px-3 py-1 text-[8px] font-bold text-white">
+                          更换
                         </button>
-                      )}
+                        <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFileChange} />
+                      </div>
+                      <div className="flex flex-col gap-4">
+                        <div className="text-4xl font-black text-slate-900">{displayName.toUpperCase()}</div>
+                        <div className="text-sm text-slate-500">上次登录时间：{formatDateTime(user.lastLoginTime)}</div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => (profileEditing ? cancelProfileEdit() : setProfileEditing(true))}
+                      className="rounded-2xl border border-slate-200 px-5 py-2 text-sm font-black text-slate-600 hover:bg-slate-50"
+                    >
+                      {profileEditing ? '取消编辑' : '编辑资料'}
+                    </button>
+                  </div>
+
+                  {profileMsg && <div className={`mb-6 text-sm font-black ${profileMsg.ok ? 'text-emerald-600' : 'text-red-500'}`}>{profileMsg.text}</div>}
+
+                  <div className="rounded-[24px] border border-slate-100">
+                    <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
+                      <div className="border-b border-slate-100 px-6 py-5 text-sm font-black text-slate-500 md:border-b-0">用户名</div>
+                      <div className="border-b border-slate-100 px-6 py-5">
+                        {profileEditing ? (
+                          <input
+                            className="input-base bg-white ring-1 ring-slate-100"
+                            value={profileForm.username}
+                            onChange={(event) => setProfileForm((curr) => ({ ...curr, username: event.target.value }))}
+                            placeholder="请输入用户名"
+                          />
+                        ) : (
+                          <span className="text-sm font-black text-slate-900">{user.username || '未设置'}</span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
+                      <div className="border-b border-slate-100 px-6 py-5 text-sm font-black text-slate-500 md:border-b-0">密码</div>
+                      <div className="border-b border-slate-100 px-6 py-5">
+                        <span className="text-sm font-black text-slate-900">{user.isPasswordSet ? '已设置' : '未设置'}</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
+                      <div className="border-b border-slate-100 px-6 py-5 text-sm font-black text-slate-500 md:border-b-0">手机号</div>
+                      <div className="border-b border-slate-100 px-6 py-5">
+                        <span className="text-sm font-black text-slate-900">{user.phone ? '已绑定' : '未绑定'}</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
+                      <div className="border-b border-slate-100 px-6 py-5 text-sm font-black text-slate-500 md:border-b-0">性别</div>
+                      <div className="border-b border-slate-100 px-6 py-5">
+                        {profileEditing ? (
+                          <select
+                            className="input-base bg-white ring-1 ring-slate-100"
+                            value={profileForm.gender}
+                            onChange={(event) => setProfileForm((curr) => ({ ...curr, gender: event.target.value }))}
+                          >
+                            <option value="">未设置</option>
+                            <option value="male">男</option>
+                            <option value="female">女</option>
+                            <option value="other">其他</option>
+                            <option value="unknown">不便透露</option>
+                          </select>
+                        ) : (
+                          <span className="text-sm font-black text-slate-900">{formatGender(user.gender)}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
+                      <div className="px-6 py-5 text-sm font-black text-slate-500">上次登录 IP</div>
+                      <div className="px-6 py-5">
+                        <span className="text-sm font-black text-slate-900">{formatLoginIp(user.lastLoginIp)}</span>
+                      </div>
                     </div>
                   </div>
 
-                  {profileMsg && (
-                    <div className={`mb-6 text-xs font-black ${profileMsg.ok ? 'text-emerald-600' : 'text-red-500'}`}>
-                      {profileMsg.text}
+                  {profileEditing && (
+                    <div className="mt-6">
+                      <button onClick={handleSaveProfile} disabled={profileLoading} className="btn-primary h-12 w-full gap-2">
+                        <span>{profileLoading ? '保存中...' : '保存用户信息'}</span>
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
                     </div>
                   )}
-
-                  <div className="hidden">
-                    {[
-                      { label: '用户名', value: user.username || '待完善', icon: ShieldCheck },
-                      { label: '手机号', value: user.phone || '未绑定', icon: User },
-                      { label: '性别', value: formatGender(user.gender), icon: User },
-                      { label: '上次登录 IP', value: formatLoginIp(user.lastLoginIp), icon: Monitor },
-                      { label: '密码状态', value: user.isPasswordSet ? '已设置' : '未设置', icon: Lock },
-                    ].map((item) => (
-                      <div key={item.label} className="flex items-center justify-between border-b border-slate-50 py-4 last:border-b-0">
-                        <div className="flex items-center gap-3">
-                          <item.icon className="h-4 w-4 text-slate-400" />
-                          <span className="text-sm font-semibold text-slate-500">{item.label}</span>
-                        </div>
-                        <span className="text-sm font-black text-slate-900">{item.value}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="space-y-2">
-                    
-                    <div className="flex items-center justify-between border-b border-slate-50 py-4">
-                      <div className="flex items-center gap-3">
-                        <ShieldCheck className="h-4 w-4 text-slate-400" />
-                        <span className="text-sm font-semibold text-slate-500">登录账号</span>
-                      </div>
-                      <span className="text-sm font-black text-slate-900">{user.username || '待完善'}</span>
-                    </div>
-                    <div className="flex items-center justify-between py-4">
-                      <div className="flex items-center gap-3">
-                        <Lock className="h-4 w-4 text-slate-400" />
-                        <span className="text-sm font-semibold text-slate-500">密码状态</span>
-                      </div>
-                      <span className="text-sm font-black text-slate-900">{user.isPasswordSet ? '已设置' : '未设置'}</span>
-                    </div>
-                    <div className="flex items-center justify-between border-b border-slate-50 py-4">
-                      <div className="flex items-center gap-3">
-                        <User className="h-4 w-4 text-slate-400" />
-                        <span className="text-sm font-semibold text-slate-500">手机号</span>
-                      </div>
-                      <span className="text-sm font-black text-slate-900">{user.phone || '未绑定'}</span>
-                    </div>
-                    <div className="flex items-center justify-between border-b border-slate-50 py-4">
-                      <div className="flex items-center gap-3">
-                        <User className="h-4 w-4 text-slate-400" />
-                        <span className="text-sm font-semibold text-slate-500">性别</span>
-                      </div>
-                      {profileEditing ? (
-                        <select
-                          className="input-base h-10 w-[140px]"
-                          value={profileForm.gender}
-                          onChange={(event) => setProfileForm((current) => ({ ...current, gender: event.target.value }))}
-                        >
-                          <option value="">未设置</option>
-                          <option value="male">男</option>
-                          <option value="female">女</option>
-                          <option value="other">其他</option>
-                          <option value="unknown">不便透露</option>
-                        </select>
-                      ) : (
-                        <span className="text-sm font-black text-slate-900">{formatGender(user.gender)}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center justify-between border-b border-slate-50 py-4">
-                      <div className="flex items-center gap-3">
-                        <Monitor className="h-4 w-4 text-slate-400" />
-                        <span className="text-sm font-semibold text-slate-500">上次登录 IP</span>
-                      </div>
-                      <span className="text-sm font-black text-slate-900">{formatLoginIp(user.lastLoginIp)}</span>
-                    </div>
-                    
-                  </div>
-
-                  <div className="hidden mt-8 border-t border-slate-50 pt-8">
-                    <div className="mb-5">
-                      <h4 className="text-sm font-black text-slate-900">编辑用户信息</h4>
-                      <p className="mt-1 text-xs font-semibold text-slate-400">头像、昵称和性别会同步更新到主界面用户卡片</p>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-                      <div className="space-y-2">
-                        <label className="ml-1 text-[11px] font-bold text-slate-500">昵称</label>
-                        <input
-                          className="input-base"
-                          value={profileForm.nickname}
-                          onChange={(event) => setProfileForm((current) => ({ ...current, nickname: event.target.value }))}
-                          placeholder="请输入昵称"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="ml-1 text-[11px] font-bold text-slate-500">性别</label>
-                        <select
-                          className="input-base"
-                          value={profileForm.gender}
-                          onChange={(event) => setProfileForm((current) => ({ ...current, gender: event.target.value }))}
-                        >
-                          <option value="">未设置</option>
-                          <option value="male">男</option>
-                          <option value="female">女</option>
-                          <option value="other">其他</option>
-                          <option value="unknown">不便透露</option>
-                        </select>
-                      </div>
-                      <div className="space-y-2 xl:col-span-2">
-                        <label className="ml-1 text-[11px] font-bold text-slate-500">头像链接</label>
-                        <input
-                          className="input-base"
-                          value={profileForm.avatarUrl}
-                          onChange={(event) => setProfileForm((current) => ({ ...current, avatarUrl: event.target.value }))}
-                          placeholder="https://..."
-                        />
-                      </div>
-                    </div>
-
-                    <div className="mt-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                      <button
-                        onClick={handleSaveProfile}
-                        disabled={profileLoading}
-                        className="btn-primary gap-2 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <Check className="h-4 w-4" />
-                        <span>{profileLoading ? '保存中...' : '保存用户信息'}</span>
-                      </button>
-                      {profileMsg && (
-                        <span className={`text-xs font-black ${profileMsg.ok ? 'text-emerald-600' : 'text-red-500'}`}>
-                          {profileMsg.text}
-                        </span>
-                      )}
-                    </div>
-                  </div>
                 </div>
 
                 <div className="console-card bg-white p-8">
-                  <div className="mb-8 flex items-center gap-3">
+                  <div className="mb-5 flex items-center gap-3">
                     <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
                       <Monitor className="h-5 w-5" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-black text-slate-900">系统主题</h3>
-                      <p className="text-sm text-slate-500">切换浅色、深色或跟随系统外观</p>
+                      <h3 className="text-lg font-black text-slate-900">外观主题</h3>
+                      <p className="text-sm text-slate-500">当前生效：{resolvedTheme === 'dark' ? '深色模式' : '浅色模式'}</p>
                     </div>
                   </div>
-
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                    {themeOptions.map((option) => {
-                      const isActive = themeMode === option.key;
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    {themeOptions.map((item) => {
+                      const Icon = item.icon;
+                      const active = themeMode === item.key;
                       return (
                         <button
-                          key={option.key}
-                          onClick={() => setThemeMode(option.key)}
-                          className={`rounded-[24px] border p-5 text-left transition-all ${
-                            isActive ? 'border-brand-200 bg-brand-50 shadow-sm' : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white'
-                          }`}
+                          key={item.key}
+                          type="button"
+                          onClick={() => setThemeMode(item.key)}
+                          className={`rounded-2xl border p-4 text-left ${active ? 'border-brand-200 bg-brand-50' : 'border-slate-100 bg-slate-50'}`}
                         >
-                          <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-slate-700 shadow-sm">
-                            <option.icon className="h-5 w-5" />
+                          <div className="flex items-center gap-2 text-sm font-black text-slate-900">
+                            <Icon className="h-4 w-4" />
+                            {item.label}
                           </div>
-                          <div className="text-sm font-black text-slate-900">{option.label}</div>
-                          <div className="mt-2 text-xs leading-5 text-slate-500">{option.desc}</div>
+                          <p className="mt-2 text-xs font-semibold text-slate-500">{item.desc}</p>
                         </button>
                       );
                     })}
                   </div>
-
-                  <div className="mt-6 rounded-[24px] bg-slate-50 px-5 py-4 ring-1 ring-slate-100">
-                    <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">当前生效主题</div>
-                    <div className="mt-2 text-sm font-black text-slate-900">
-                      {themeMode === 'system' ? `跟随系统（当前为${resolvedTheme === 'dark' ? '深色' : '浅色'}）` : themeMode === 'dark' ? '深色' : '浅色'}
-                    </div>
-                  </div>
                 </div>
 
-              </motion.div>
-            )}
-
-            {activeSection === 'docs' && (
-              <motion.div
-                key="docs"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="space-y-8"
-              >
-                <div className="console-card bg-white p-8">
-                  <div className="mb-8 flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white">
-                      <BookOpenText className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-black text-slate-900">系统文字说明</h3>
-                      <p className="text-sm text-slate-500">面向日常运维、数据检查和论文展示的功能说明</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                    {[
-                      { title: '实时路网地图', text: '展示核心路口的实时速度和拥堵状态，路口列表与地图标记可以联动聚焦。' },
-                      { title: '控制台总览', text: '汇总最新采集数据、平均速度、拥堵节点数量和预测服务状态。' },
-                      { title: '历史档案导出', text: '按时间范围和路口筛选导出 CSV，也可导出当前预测报表。' },
-                    ].map((item) => (
-                      <div key={item.title} className="rounded-[24px] border border-slate-100 bg-slate-50 p-5">
-                        <div className="text-sm font-black text-slate-900">{item.title}</div>
-                        <p className="mt-2 text-xs leading-5 text-slate-500">{item.text}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="console-card bg-white p-8">
-                  <div className="mb-8 flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
-                      <Monitor className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-black text-slate-900">系统术语解释</h3>
-                      <p className="text-sm text-slate-500">统一界面、报表和模型相关概念口径</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    {[
-                      { term: '节点', desc: '系统监控的一个核心路口，例如 A1、B2、K11。' },
-                      { term: '通行速度', desc: '高德路况接口或历史数据中采集到的路段平均车速，单位为 km/h。' },
-                      { term: '拥堵状态', desc: '路况等级字段，通常包括畅通、缓行、拥堵、严重拥堵等状态。' },
-                      { term: '采集窗口', desc: '模型预测时使用的最近连续时间步数据，目前默认使用 12 个时间步。' },
-                      { term: 'LST-GCN', desc: '结合时序建模和图卷积的交通速度预测模型，用于推演下一时段路况。' },
-                      { term: '预测报表', desc: '基于当前窗口生成的未来 15 分钟和 30 分钟速度、状态推演结果。' },
-                    ].map((item) => (
-                      <div key={item.term} className="flex flex-col gap-2 border-b border-slate-50 py-4 last:border-b-0 md:flex-row md:items-start md:justify-between">
-                        <div className="text-sm font-black text-slate-900">{item.term}</div>
-                        <div className="max-w-3xl text-sm leading-6 text-slate-500">{item.desc}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="console-card bg-white p-8">
-                  <div className="mb-8 flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-                      <BookOpenText className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-black text-slate-900">速度-流量-密度关系</h3>
-                      <p className="text-sm text-slate-500">基于 Greenshields 模型解释车辆速度与拥堵状态的映射逻辑</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                    {[
-                      { title: '基本交通流关系', text: '流量 q = 速度 v x 密度 k。单位时间通过车辆越多，流量越高；但密度继续升高会压低速度。' },
-                      { title: 'Greenshields 线性假设', text: '平均速度 v = vf x (1 - k / kj)。vf 表示自由流速度，kj 表示阻塞密度。' },
-                      { title: '拥堵区判断', text: '当密度超过临界密度 kj / 2 后，速度和流量会同步下降，车辆排队与上游拥堵开始累积。' },
-                      { title: '高德拥堵状态', text: 'congestion_status 直接来自高德 API 返回字段：1=畅通，2=缓行，3=拥堵，4=严重拥堵，不由系统主观设定。' },
-                      { title: 'road_count 含义', text: '采集脚本以路口坐标为圆心、半径 100 米取圆，圆内覆盖路段数量即 road_count，用于描述采集代表性。' },
-                      { title: '预测目标口径', text: '系统预测目标是路口平均行驶速度，不是车辆数量。速度可作为交通状态和拥堵程度的代理变量。' },
-                    ].map((item) => (
-                      <div key={item.title} className="rounded-[24px] border border-slate-100 bg-slate-50 p-5">
-                        <div className="text-sm font-black text-slate-900">{item.title}</div>
-                        <p className="mt-2 text-xs leading-5 text-slate-500">{item.text}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="mt-6 rounded-[24px] bg-slate-50 px-5 py-4 ring-1 ring-slate-100">
-                    <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">系统应用口径</div>
-                    <p className="mt-2 text-sm leading-6 text-slate-500">
-                      当前系统主要使用高德路况速度和 congestion_status。高德 API 本质上提供路段速度与拥堵状态，不能直接提供单位时间通过路口的车辆数量；
-                      车辆计数通常依赖路口摄像头、地感线圈等交管设备。论文与系统说明中应将预测目标明确为“路口平均行驶速度”，并用 Greenshields
-                      模型解释速度、密度与流量之间的理论关系：速度下降通常意味着车辆密度升高、拥堵程度增强。因此，用速度作为交通状态代理变量是合理且自洽的。
-                      road_count 目前仅作为采集覆盖路段数量存储，暂未参与模型推理和前端判断。
-                    </p>
-                  </div>
-                </div>
+                
               </motion.div>
             )}
 
             {activeSection === 'password' && (
-              <motion.div
-                key="password"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="console-card bg-white p-8"
-              >
+              <motion.div key="password" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+                <div className="console-card bg-white p-8">
                 <div className="mb-8 flex items-center gap-3">
                   <div className={`flex h-11 w-11 items-center justify-center rounded-2xl text-white ${user.isPasswordSet ? 'bg-slate-900' : 'bg-amber-500'}`}>
                     <Lock className="h-5 w-5" />
                   </div>
                   <div>
                     <h3 className="text-lg font-black text-slate-900">{user.isPasswordSet ? '修改密码' : '设置登录密码'}</h3>
-                    <p className="text-sm text-slate-500">
-                      {user.isPasswordSet ? '更新当前账号的登录密码' : '请设置密码以保障账户安全，并启用账号密码登录'}
-                    </p>
+                    <p className="text-sm text-slate-500">{user.isPasswordSet ? '更新当前账号的登录密码。' : '请先设置登录密码，启用账号密码登录。'}</p>
                   </div>
                 </div>
 
@@ -835,6 +599,7 @@ export default function Settings() {
                 )}
 
                 <div className="space-y-5">
+                  <div className="text-xs font-black tracking-wider text-slate-400">修改密码</div>
                   {user.isPasswordSet && (
                     <div className="space-y-2">
                       <label className="ml-1 text-[11px] font-bold text-slate-500">当前密码</label>
@@ -843,11 +608,10 @@ export default function Settings() {
                         className="input-base bg-white ring-1 ring-slate-100"
                         placeholder="请输入当前密码"
                         value={pwForm.oldPassword}
-                        onChange={(e) => setPwForm({ ...pwForm, oldPassword: e.target.value })}
+                        onChange={(e) => setPwForm((curr) => ({ ...curr, oldPassword: e.target.value }))}
                       />
                     </div>
                   )}
-
                   <div className="space-y-2">
                     <label className="ml-1 text-[11px] font-bold text-slate-500">新密码</label>
                     <input
@@ -855,10 +619,9 @@ export default function Settings() {
                       className="input-base bg-white ring-1 ring-slate-100"
                       placeholder="请输入至少 6 位新密码"
                       value={pwForm.newPassword}
-                      onChange={(e) => setPwForm({ ...pwForm, newPassword: e.target.value })}
+                      onChange={(e) => setPwForm((curr) => ({ ...curr, newPassword: e.target.value }))}
                     />
                   </div>
-
                   <div className="space-y-2">
                     <label className="ml-1 text-[11px] font-bold text-slate-500">确认新密码</label>
                     <input
@@ -866,7 +629,7 @@ export default function Settings() {
                       className="input-base bg-white ring-1 ring-slate-100"
                       placeholder="请再次输入新密码"
                       value={pwForm.confirm}
-                      onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
+                      onChange={(e) => setPwForm((curr) => ({ ...curr, confirm: e.target.value }))}
                     />
                   </div>
 
@@ -891,25 +654,69 @@ export default function Settings() {
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
+                </div>
 
+                <div className="console-card bg-white p-8">
+                  <div className="mb-8 flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white">
+                      <KeyRound className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900">手机号验证</h3>
+                      <p className="text-sm text-slate-500">绑定或更新手机号，用于账号安全验证。</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-5">
+                    <div className="text-xs font-black tracking-wider text-slate-400">手机号验证</div>
+                    <div className="text-sm font-black text-slate-900">{user.phone ? '已设置' : '未设置'}</div>
+                    <div className="flex gap-2">
+                      <input
+                        className="input-base h-10 flex-1 bg-white ring-1 ring-slate-100"
+                        value={phoneForm.phone}
+                        onChange={(e) => {
+                          setPhoneForm((curr) => ({ ...curr, phone: e.target.value }));
+                          setPhoneVerified(false);
+                        }}
+                        placeholder="输入手机号"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSendPhoneSms}
+                        disabled={phoneSending || phoneCountdown > 0}
+                        className="h-10 rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-600 disabled:opacity-50"
+                      >
+                        {phoneCountdown > 0 ? `${phoneCountdown}s` : phoneSending ? '发送中' : '发验证码'}
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        className="input-base h-10 flex-1 bg-white ring-1 ring-slate-100"
+                        value={phoneForm.smsCode}
+                        onChange={(e) => setPhoneForm((curr) => ({ ...curr, smsCode: e.target.value }))}
+                        placeholder="输入短信验证码"
+                      />
+                      <button type="button" onClick={handleVerifyPhone} className="h-10 rounded-lg bg-slate-900 px-3 text-xs font-bold text-white">
+                        验证是否通过
+                      </button>
+                    </div>
+                    <div className={`text-xs font-bold ${phoneVerified ? 'text-emerald-600' : 'text-slate-400'}`}>
+                      {phoneVerified ? '【手机号验证】验证通过' : '短信验证码 60 秒内有效'}
+                    </div>
+                  </div>
+                </div>
               </motion.div>
             )}
 
             {activeSection === 'archive' && (
-              <motion.div
-                key="archive"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="console-card bg-white p-8"
-              >
+              <motion.div key="archive" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="console-card bg-white p-8">
                 <div className="mb-8 flex items-center gap-3">
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
                     <Download className="h-5 w-5" />
                   </div>
                   <div>
                     <h3 className="text-lg font-black text-slate-900">历史档案数据导出</h3>
-                    <p className="text-sm text-slate-500">导出历史路况档案和报表数据</p>
+                    <p className="text-sm text-slate-500">导出历史路况档案和预测报表。</p>
                   </div>
                 </div>
 
@@ -926,18 +733,20 @@ export default function Settings() {
                     <label className="ml-1 text-[11px] font-bold text-slate-500">路口范围</label>
                     <select className="input-base bg-white ring-1 ring-slate-100" value={nodeId} onChange={(e) => setNodeId(e.target.value)}>
                       <option value="all">全部路口</option>
-                      {NODE_OPTIONS.slice(1).map((node) => <option key={node} value={node}>{node}</option>)}
+                      {NODE_OPTIONS.slice(1).map((node) => (
+                        <option key={node} value={node}>{node}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
 
                 <div className="mt-6 rounded-[28px] bg-slate-50 p-6 ring-1 ring-slate-100">
                   <div className="mb-4 text-base font-black text-slate-900">导出说明</div>
-                  <p className="text-sm leading-6 text-slate-500">CSV 会根据当前时间范围和路口筛选条件生成，适合离线分析、论文附录和二次清洗。</p>
+                  <p className="text-sm leading-6 text-slate-500">CSV 会根据时间范围和路口筛选条件生成，适合离线分析与论文附录。</p>
                   <div className="mt-5 flex flex-wrap gap-3">
                     <button onClick={handleExport} className="btn-primary gap-2">
-                    <Download className="h-4 w-4" />
-                    <span>导出历史 CSV</span>
+                      <Download className="h-4 w-4" />
+                      <span>导出历史 CSV</span>
                     </button>
                     <button onClick={handlePredictExport} className="btn-primary gap-2">
                       <FileArchive className="h-4 w-4" />
@@ -965,6 +774,95 @@ export default function Settings() {
                         暂无导出记录，执行一次导出后会显示在这里。
                       </div>
                     )}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {activeSection === 'docs' && (
+              <motion.div key="docs" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+                <div className="console-card bg-white p-8">
+                  <div className="mb-6 flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
+                      <MessageSquareText className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900">系统文字说明</h3>
+                      <p className="text-sm text-slate-500">面向日常运维、数据检查和展示汇报的统一口径。</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                    {[
+                      { title: '实时路网地图', text: '展示核心路口速度与拥堵状态，支持列表与地图联动。' },
+                      { title: '控制台总览', text: '汇总采集数据、平均速度、拥堵节点数与预测服务状态。' },
+                      { title: '历史档案导出', text: '按时间范围和路口导出 CSV，同时支持预测报表导出。' },
+                    ].map((item) => (
+                      <div key={item.title} className="rounded-[24px] border border-slate-100 bg-slate-50 p-5">
+                        <div className="text-sm font-black text-slate-900">{item.title}</div>
+                        <p className="mt-2 text-xs leading-5 text-slate-500">{item.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="console-card bg-white p-8">
+                  <div className="mb-6 flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                      <ShieldCheck className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900">术语解释</h3>
+                      <p className="text-sm text-slate-500">帮助团队统一“速度、状态、预测”这些核心指标。</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {[
+                      { term: '节点', desc: '系统监控的单个核心路口，例如 A1、B2。' },
+                      { term: '通行速度', desc: '来源于路况接口或历史记录，单位 km/h。' },
+                      { term: '拥堵状态', desc: '路况等级字段，通常包含畅通、缓行、拥堵、严重拥堵。' },
+                      { term: '预测报表', desc: '基于当前窗口生成的 15/30 分钟速度趋势。' },
+                    ].map((item) => (
+                      <div key={item.term} className="flex flex-col gap-2 border-b border-slate-50 py-4 last:border-b-0 md:flex-row md:justify-between">
+                        <div className="text-sm font-black text-slate-900">{item.term}</div>
+                        <div className="max-w-3xl text-sm leading-6 text-slate-500">{item.desc}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="console-card bg-white p-8">
+                  <div className="mb-8 flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
+                      <BookOpenText className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900">速度-流量-密度关系</h3>
+                      <p className="text-sm text-slate-500">基于 Greenshields 模型解释交通状态的映射逻辑。</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                    {[
+                      { title: '基本关系', text: '流量 q = 速度 v × 密度 k。密度上升通常会压低车速。' },
+                      { title: '线性假设', text: 'Greenshields: v = vf × (1 - k / kj)，vf 为自由流速度，kj 为阻塞密度。' },
+                      { title: '拥堵判断', text: '当密度超过临界值后，速度与通行能力会同步下降，排队风险增大。' },
+                      { title: '状态来源', text: 'congestion_status 来自路况接口返回字段，不由前端主观定义。' },
+                      { title: 'road_count 含义', text: '表示采集覆盖范围内的路段数量，用于描述样本代表性。' },
+                      { title: '预测口径', text: '系统预测目标是路口平均速度，作为交通状态的核心代理变量。' },
+                    ].map((item) => (
+                      <div key={item.title} className="rounded-[24px] border border-slate-100 bg-slate-50 p-5">
+                        <div className="text-sm font-black text-slate-900">{item.title}</div>
+                        <p className="mt-2 text-xs leading-5 text-slate-500">{item.text}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-6 rounded-[24px] bg-slate-50 px-5 py-4 ring-1 ring-slate-100">
+                    <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">应用口径</div>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">
+                      当前系统以路口平均速度和拥堵状态作为核心指标。速度下降通常对应密度升高与拥堵加重，
+                      因此在模型推理与业务展示中，使用“速度”作为交通状态代理变量是合理且一致的。
+                    </p>
                   </div>
                 </div>
               </motion.div>
