@@ -199,10 +199,19 @@ function serializeUser(user: UserRow) {
 }
 
 async function validateCaptcha(captchaId: string, captcha: string) {
-  if (!captchaId || !captcha) return false;
+  console.log('  [validateCaptcha] captchaId:', captchaId, 'captcha:', captcha);
+  if (!captchaId || !captcha) {
+    console.log('  [validateCaptcha] 失败: captchaId 或 captcha 为空');
+    return false;
+  }
   const expected = await cacheGet(`captcha:${captchaId}`);
-  if (!expected) return false;
+  console.log('  [validateCaptcha] 从缓存获取的验证码:', expected);
+  if (!expected) {
+    console.log('  [validateCaptcha] 失败: 缓存中没有找到验证码');
+    return false;
+  }
   const ok = normalizeCaptcha(expected) === normalizeCaptcha(captcha);
+  console.log('  [validateCaptcha] 比对结果:', ok, 'expected:', expected, 'input:', captcha);
   if (ok) await cacheDelete(`captcha:${captchaId}`);
   return ok;
 }
@@ -278,12 +287,15 @@ router.get('/captcha', async (_req: Request, res: Response) => {
 });
 
 router.post('/sms/send', async (req: Request, res: Response) => {
+  console.log('\n========== 收到短信发送请求 ==========');
+  console.log('请求体:', req.body);
   const { phone, captchaId, captcha } = req.body;
   const normalizedPhone = normalizePhone(phone);
   if (!/^1\d{10}$/.test(normalizedPhone)) {
     return res.status(400).json({ success: false, error: '请输入有效的手机号' });
   }
   if (!(await validateCaptcha(captchaId, captcha))) {
+    console.log('❌ 图形验证码验证失败，captchaId:', captchaId, 'captcha:', captcha);
     return res.status(400).json({ success: false, error: '图形验证码错误或已过期' });
   }
 
@@ -296,7 +308,7 @@ router.post('/sms/send', async (req: Request, res: Response) => {
   const code = randomDigits(6);
   await cacheSet(`sms:${normalizedPhone}`, code, SMS_TTL_SECONDS);
   await cacheSet(rateKey, '1', SMS_RATE_LIMIT_SECONDS);
-  console.log(`[模拟短信] 手机号 ${normalizedPhone} 的验证码是：${code}，10分钟内有效`);
+  console.log(`\n🎯 [模拟短信] 手机号 ${normalizedPhone} 的验证码是：${code}，10分钟内有效\n`);
 
   res.json({ success: true, message: '验证码已发送（开发模式请查看后端控制台）' });
 });
@@ -316,7 +328,7 @@ router.post('/sms/send-profile', requireAuth, async (req: AuthRequest, res: Resp
   const code = randomDigits(6);
   await cacheSet(`sms:${phone}`, code, SMS_TTL_SECONDS);
   await cacheSet(rateKey, '1', SMS_RATE_LIMIT_SECONDS);
-  console.log(`[模拟短信] 个人资料绑定手机号 ${phone} 的验证码是：${code}`);
+  console.log(`\n🎯 [模拟短信] 个人资料绑定手机号 ${phone} 的验证码是：${code}\n`);
   res.json({ success: true, message: '验证码已发送（开发模式请查看后端控制台）', devCode: code });
 });
 
@@ -407,6 +419,7 @@ router.post('/register', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: '请输入有效的手机号' });
   }
   if (!(await validateCaptcha(captchaId, captcha))) {
+    console.log('❌ 图形验证码验证失败，captchaId:', captchaId, 'captcha:', captcha);
     return res.status(400).json({ success: false, error: '图形验证码错误或已过期' });
   }
 
@@ -448,6 +461,7 @@ router.post('/login', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: '账号和密码不能为空' });
   }
   if (!(await validateCaptcha(captchaId, captcha))) {
+    console.log('❌ 图形验证码验证失败，captchaId:', captchaId, 'captcha:', captcha);
     return res.status(400).json({ success: false, error: '图形验证码错误或已过期' });
   }
 
