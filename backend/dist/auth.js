@@ -44,8 +44,8 @@ function randomDigits(length) {
 function randomUsername() {
     return `User_${randomDigits(4)}`;
 }
-function randomNickname() {
-    return `用户${randomDigits(4)}`;
+function defaultRole() {
+    return '执行者';
 }
 function randomAvatar(seed) {
     return `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(seed)}`;
@@ -89,6 +89,55 @@ async function addIndexIfMissing(indexName, sql) {
         await db_1.default.query(sql);
     }
 }
+function getRolePrefix(role) {
+    return role === '管理员' ? 'G' : 'S';
+}
+function buildRoleId(prefix, n) {
+    return `${prefix}${String(n).padStart(4, '0')}`;
+}
+function isRoleIdFormatValid(role, roleId) {
+    if (!roleId)
+        return false;
+    const prefix = getRolePrefix(role);
+    return new RegExp(`^${prefix}\\d{4,}$`).test(roleId);
+}
+async function generateRoleIdByRole(role) {
+    const prefix = getRolePrefix(role);
+    const [rows] = await db_1.default.query(`SELECT COALESCE(MAX(CAST(SUBSTRING(role_id, 2) AS UNSIGNED)), 0) AS maxNo
+     FROM users
+     WHERE role_id REGEXP ?`, [`^${prefix}[0-9]{4,}$`]);
+    const nextNo = Number(rows?.[0]?.maxNo || 0) + 1;
+    return buildRoleId(prefix, nextNo);
+}
+async function normalizeExistingRoleIds() {
+    const [rows] = await db_1.default.query('SELECT id, role, role_id FROM users ORDER BY id ASC');
+    const users = rows;
+    const used = new Set();
+    let maxG = 0;
+    let maxS = 0;
+    const pending = [];
+    for (const user of users) {
+        const rid = (user.role_id || '').trim();
+        const valid = isRoleIdFormatValid(user.role, rid);
+        if (!valid || used.has(rid)) {
+            pending.push({ id: user.id, role: user.role });
+            continue;
+        }
+        used.add(rid);
+        const num = Number(rid.slice(1));
+        if (rid.startsWith('G'))
+            maxG = Math.max(maxG, num);
+        if (rid.startsWith('S'))
+            maxS = Math.max(maxS, num);
+    }
+    for (const user of pending) {
+        const prefix = getRolePrefix(user.role);
+        const nextNo = prefix === 'G' ? ++maxG : ++maxS;
+        const nextRoleId = buildRoleId(prefix, nextNo);
+        used.add(nextRoleId);
+        await db_1.default.query('UPDATE users SET role_id = ? WHERE id = ?', [nextRoleId, user.id]);
+    }
+}
 async function ensureUserTableMigration() {
     await db_1.default.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -97,7 +146,8 @@ async function ensureUserTableMigration() {
       password VARCHAR(255) NULL,
       phone VARCHAR(20) NULL,
       avatar_url VARCHAR(500) NULL,
-      nickname VARCHAR(80) NOT NULL,
+      role VARCHAR(80) NOT NULL,
+      role_id VARCHAR(32) NULL,
       gender VARCHAR(20) NULL,
       is_password_set TINYINT(1) NOT NULL DEFAULT 0,
       last_login_time DATETIME NULL,
@@ -109,11 +159,17 @@ async function ensureUserTableMigration() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
     const columns = await getColumns('users');
+    if (!columns.has('role') && columns.has('nickname')) {
+        await db_1.default.query('ALTER TABLE users CHANGE COLUMN nickname role VARCHAR(80) NOT NULL DEFAULT "执行者"');
+        columns.delete('nickname');
+        columns.add('role');
+    }
     await addColumnIfMissing(columns, 'username', 'VARCHAR(80) NULL');
     await addColumnIfMissing(columns, 'password', 'VARCHAR(255) NULL');
     await addColumnIfMissing(columns, 'phone', 'VARCHAR(20) NULL');
     await addColumnIfMissing(columns, 'avatar_url', 'VARCHAR(500) NULL');
-    await addColumnIfMissing(columns, 'nickname', 'VARCHAR(80) NOT NULL DEFAULT "用户"');
+    await addColumnIfMissing(columns, 'role', 'VARCHAR(80) NOT NULL DEFAULT "执行者"');
+    await addColumnIfMissing(columns, 'role_id', 'VARCHAR(32) NULL');
     await addColumnIfMissing(columns, 'gender', 'VARCHAR(20) NULL');
     await addColumnIfMissing(columns, 'is_password_set', 'TINYINT(1) NOT NULL DEFAULT 0');
     await addColumnIfMissing(columns, 'last_login_time', 'DATETIME NULL');
@@ -130,15 +186,18 @@ async function ensureUserTableMigration() {
         await db_1.default.query('ALTER TABLE users MODIFY COLUMN password_hash VARCHAR(255) NULL');
     }
     if (columns.has('display_name')) {
-        await db_1.default.query('UPDATE users SET nickname = COALESCE(NULLIF(nickname, ""), display_name, username, "用户")');
+        await db_1.default.query('UPDATE users SET role = COALESCE(NULLIF(role, ""), display_name, "执行者")');
     }
     await db_1.default.query('UPDATE users SET username = NULL WHERE username = ""');
     await db_1.default.query('UPDATE users SET phone = NULL WHERE phone = ""');
     await db_1.default.query('UPDATE users SET is_password_set = 1 WHERE password IS NOT NULL AND password <> ""');
-    await db_1.default.query('UPDATE users SET nickname = CONCAT("用户", LPAD(id, 4, "0")) WHERE nickname IS NULL OR nickname = ""');
+    await db_1.default.query('UPDATE users SET role = "执行者" WHERE role IS NULL OR role = ""');
+    await normalizeExistingRoleIds();
+    await db_1.default.query('ALTER TABLE users MODIFY COLUMN role_id VARCHAR(32) NOT NULL');
     await db_1.default.query('UPDATE users SET avatar_url = CONCAT("https://api.dicebear.com/9.x/initials/svg?seed=", COALESCE(username, phone, id)) WHERE avatar_url IS NULL OR avatar_url = ""');
     await addIndexIfMissing('uniq_users_username', 'CREATE UNIQUE INDEX uniq_users_username ON users (username)');
     await addIndexIfMissing('uniq_users_phone', 'CREATE UNIQUE INDEX uniq_users_phone ON users (phone)');
+    await addIndexIfMissing('uniq_users_role_id', 'CREATE UNIQUE INDEX uniq_users_role_id ON users (role_id)');
     await addIndexIfMissing('idx_users_session_token', 'CREATE INDEX idx_users_session_token ON users (session_token)');
 }
 function serializeUser(user) {
@@ -147,8 +206,9 @@ function serializeUser(user) {
         username: user.username,
         phone: user.phone,
         avatarUrl: user.avatar_url,
-        nickname: user.nickname,
-        displayName: user.nickname || user.username || user.phone || '用户',
+        role: user.role,
+        roleId: user.role_id,
+        displayName: user.role || user.username || user.phone || '用户',
         gender: user.gender,
         isPasswordSet: Boolean(user.is_password_set),
         lastLoginTime: user.last_login_time,
@@ -156,12 +216,19 @@ function serializeUser(user) {
     };
 }
 async function validateCaptcha(captchaId, captcha) {
-    if (!captchaId || !captcha)
+    console.log('  [validateCaptcha] captchaId:', captchaId, 'captcha:', captcha);
+    if (!captchaId || !captcha) {
+        console.log('  [validateCaptcha] 失败: captchaId 或 captcha 为空');
         return false;
+    }
     const expected = await cacheGet(`captcha:${captchaId}`);
-    if (!expected)
+    console.log('  [validateCaptcha] 从缓存获取的验证码:', expected);
+    if (!expected) {
+        console.log('  [validateCaptcha] 失败: 缓存中没有找到验证码');
         return false;
+    }
     const ok = normalizeCaptcha(expected) === normalizeCaptcha(captcha);
+    console.log('  [validateCaptcha] 比对结果:', ok, 'expected:', expected, 'input:', captcha);
     if (ok)
         await cacheDelete(`captcha:${captchaId}`);
     return ok;
@@ -224,12 +291,15 @@ router.get('/captcha', async (_req, res) => {
     res.json({ success: true, captchaId, svg: createCaptchaSvg(code), expiresIn: CAPTCHA_TTL_SECONDS });
 });
 router.post('/sms/send', async (req, res) => {
+    console.log('\n========== 收到短信发送请求 ==========');
+    console.log('请求体:', req.body);
     const { phone, captchaId, captcha } = req.body;
     const normalizedPhone = normalizePhone(phone);
     if (!/^1\d{10}$/.test(normalizedPhone)) {
         return res.status(400).json({ success: false, error: '请输入有效的手机号' });
     }
     if (!(await validateCaptcha(captchaId, captcha))) {
+        console.log('❌ 图形验证码验证失败，captchaId:', captchaId, 'captcha:', captcha);
         return res.status(400).json({ success: false, error: '图形验证码错误或已过期' });
     }
     const ip = getClientIp(req);
@@ -240,7 +310,7 @@ router.post('/sms/send', async (req, res) => {
     const code = randomDigits(6);
     await cacheSet(`sms:${normalizedPhone}`, code, SMS_TTL_SECONDS);
     await cacheSet(rateKey, '1', SMS_RATE_LIMIT_SECONDS);
-    console.log(`[模拟短信] 手机号 ${normalizedPhone} 的验证码是：${code}，10分钟内有效`);
+    console.log(`\n🎯 [模拟短信] 手机号 ${normalizedPhone} 的验证码是：${code}，10分钟内有效\n`);
     res.json({ success: true, message: '验证码已发送（开发模式请查看后端控制台）' });
 });
 router.post('/sms/send-profile', requireAuth, async (req, res) => {
@@ -256,7 +326,7 @@ router.post('/sms/send-profile', requireAuth, async (req, res) => {
     const code = randomDigits(6);
     await cacheSet(`sms:${phone}`, code, SMS_TTL_SECONDS);
     await cacheSet(rateKey, '1', SMS_RATE_LIMIT_SECONDS);
-    console.log(`[模拟短信] 个人资料绑定手机号 ${phone} 的验证码是：${code}`);
+    console.log(`\n🎯 [模拟短信] 个人资料绑定手机号 ${phone} 的验证码是：${code}\n`);
     res.json({ success: true, message: '验证码已发送（开发模式请查看后端控制台）', devCode: code });
 });
 router.post('/phone-login', async (req, res) => {
@@ -271,10 +341,23 @@ router.post('/phone-login', async (req, res) => {
         let user = rows[0];
         if (!user) {
             const username = await generateUniqueUsername();
-            const nickname = randomNickname();
-            const avatarUrl = randomAvatar(nickname);
-            const [result] = await db_1.default.query(`INSERT INTO users (username, phone, nickname, avatar_url, is_password_set)
-         VALUES (?, ?, ?, ?, 0)`, [username, normalizedPhone, nickname, avatarUrl]);
+            const role = defaultRole();
+            const avatarUrl = randomAvatar(role);
+            let result = null;
+            for (let i = 0; i < 5; i += 1) {
+                const roleId = await generateRoleIdByRole(role);
+                try {
+                    [result] = await db_1.default.query(`INSERT INTO users (username, phone, role, role_id, avatar_url, is_password_set)
+             VALUES (?, ?, ?, ?, ?, 0)`, [username, normalizedPhone, role, roleId, avatarUrl]);
+                    break;
+                }
+                catch (err) {
+                    if (String(err?.code || '') !== 'ER_DUP_ENTRY')
+                        throw err;
+                }
+            }
+            if (!result)
+                throw new Error('创建用户失败：无法生成唯一 role_id');
             [rows] = await db_1.default.query('SELECT * FROM users WHERE id = ?', [result.insertId]);
             user = rows[0];
         }
@@ -333,6 +416,7 @@ router.post('/register', async (req, res) => {
         return res.status(400).json({ success: false, error: '请输入有效的手机号' });
     }
     if (!(await validateCaptcha(captchaId, captcha))) {
+        console.log('❌ 图形验证码验证失败，captchaId:', captchaId, 'captcha:', captcha);
         return res.status(400).json({ success: false, error: '图形验证码错误或已过期' });
     }
     try {
@@ -342,11 +426,24 @@ router.post('/register', async (req, res) => {
         if (existing.length > 0) {
             return res.status(409).json({ success: false, error: '用户名或手机号已被注册' });
         }
-        const nickname = randomNickname();
-        const avatarUrl = randomAvatar(nickname);
+        const role = defaultRole();
+        const avatarUrl = randomAvatar(role);
         const passwordHash = await bcryptjs_1.default.hash(password, 10);
-        const [result] = await db_1.default.query(`INSERT INTO users (username, password, phone, nickname, avatar_url, is_password_set)
-       VALUES (?, ?, NULLIF(?, ''), ?, ?, 1)`, [account, passwordHash, normalizedPhone, nickname, avatarUrl]);
+        let result = null;
+        for (let i = 0; i < 5; i += 1) {
+            const roleId = await generateRoleIdByRole(role);
+            try {
+                [result] = await db_1.default.query(`INSERT INTO users (username, password, phone, role, role_id, avatar_url, is_password_set)
+           VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, 1)`, [account, passwordHash, normalizedPhone, role, roleId, avatarUrl]);
+                break;
+            }
+            catch (err) {
+                if (String(err?.code || '') !== 'ER_DUP_ENTRY')
+                    throw err;
+            }
+        }
+        if (!result)
+            throw new Error('注册失败：无法生成唯一 role_id');
         const session = await createSession(result.insertId, req);
         res.json({
             success: true,
@@ -365,6 +462,7 @@ router.post('/login', async (req, res) => {
         return res.status(400).json({ success: false, error: '账号和密码不能为空' });
     }
     if (!(await validateCaptcha(captchaId, captcha))) {
+        console.log('❌ 图形验证码验证失败，captchaId:', captchaId, 'captcha:', captcha);
         return res.status(400).json({ success: false, error: '图形验证码错误或已过期' });
     }
     try {
@@ -415,13 +513,68 @@ router.get('/verify', requireAuth, async (req, res) => {
 router.get('/me', requireAuth, (req, res) => {
     res.json({ success: true, user: serializeUser(req.user) });
 });
+router.get('/users', requireAuth, async (_req, res) => {
+    const [rows] = await db_1.default.query(`SELECT id, username, role, role_id
+     FROM users
+     WHERE role_id IS NOT NULL AND role_id <> ''
+     ORDER BY role_id ASC`);
+    res.json({ success: true, users: rows });
+});
+router.post('/users/:id/role', requireAuth, async (req, res) => {
+    if (req.user?.role !== '管理员') {
+        return res.status(403).json({ success: false, error: '仅管理员可修改用户身份' });
+    }
+    const role = String(req.body.role || '').trim();
+    const allowedRoles = ['管理员', '执行者'];
+    if (!allowedRoles.includes(role)) {
+        return res.status(400).json({ success: false, error: '角色仅支持：管理员、执行者' });
+    }
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId) || userId <= 0) {
+        return res.status(400).json({ success: false, error: '用户ID不合法' });
+    }
+    const [targetRows] = await db_1.default.query('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
+    if (targetRows.length === 0) {
+        return res.status(404).json({ success: false, error: '目标用户不存在' });
+    }
+    const target = targetRows[0];
+    let nextRoleId = target.role_id;
+    if (!isRoleIdFormatValid(role, nextRoleId)) {
+        nextRoleId = await generateRoleIdByRole(role);
+    }
+    let updated = false;
+    for (let i = 0; i < 5; i += 1) {
+        try {
+            await db_1.default.query('UPDATE users SET role = ?, role_id = ? WHERE id = ?', [role, nextRoleId, userId]);
+            updated = true;
+            break;
+        }
+        catch (err) {
+            if (String(err?.code || '') !== 'ER_DUP_ENTRY')
+                throw err;
+            nextRoleId = await generateRoleIdByRole(role);
+        }
+    }
+    if (!updated) {
+        return res.status(500).json({ success: false, error: '角色更新失败：无法生成唯一 role_id' });
+    }
+    const [rows] = await db_1.default.query('SELECT * FROM users WHERE id = ?', [userId]);
+    res.json({ success: true, user: serializeUser(rows[0]) });
+});
 router.post('/profile', requireAuth, async (req, res) => {
-    const nickname = String(req.body.nickname || '').trim();
+    const requestedRole = String(req.body.role || '').trim();
+    const role = req.user?.role === '管理员'
+        ? String(requestedRole || req.user?.role || '').trim()
+        : String(req.user?.role || '').trim();
     const avatarUrl = String(req.body.avatarUrl || '').trim();
     const gender = String(req.body.gender || '').trim();
     const allowedGender = ['', 'male', 'female', 'other', 'unknown'];
-    if (nickname.length < 1 || nickname.length > 30) {
-        return res.status(400).json({ success: false, error: '昵称需为 1-30 个字符' });
+    const allowedRoles = ['管理员', '执行者'];
+    if (req.user?.role !== '管理员' && requestedRole && requestedRole !== req.user?.role) {
+        return res.status(403).json({ success: false, error: '仅管理员可修改用户身份' });
+    }
+    if (!allowedRoles.includes(role)) {
+        return res.status(400).json({ success: false, error: '角色仅支持：管理员、执行者' });
     }
     if (avatarUrl && avatarUrl.length > 2 * 1024 * 1024) {
         return res.status(400).json({ success: false, error: '头像链接过长' });
@@ -432,7 +585,26 @@ router.post('/profile', requireAuth, async (req, res) => {
     if (!allowedGender.includes(gender)) {
         return res.status(400).json({ success: false, error: '性别字段不合法' });
     }
-    await db_1.default.query('UPDATE users SET nickname = ?, avatar_url = NULLIF(?, ""), gender = NULLIF(?, "") WHERE id = ?', [nickname, avatarUrl, gender, req.user.id]);
+    let updated = false;
+    for (let i = 0; i < 5; i += 1) {
+        let nextRoleId = req.user.role_id;
+        if (!isRoleIdFormatValid(role, nextRoleId)) {
+            nextRoleId = await generateRoleIdByRole(role);
+        }
+        try {
+            await db_1.default.query('UPDATE users SET role = ?, role_id = ?, avatar_url = NULLIF(?, ""), gender = NULLIF(?, "") WHERE id = ?', [role, nextRoleId, avatarUrl, gender, req.user.id]);
+            updated = true;
+            break;
+        }
+        catch (err) {
+            if (String(err?.code || '') !== 'ER_DUP_ENTRY')
+                throw err;
+            req.user.role_id = null;
+        }
+    }
+    if (!updated) {
+        return res.status(500).json({ success: false, error: '角色更新失败：无法生成唯一 role_id' });
+    }
     const [rows] = await db_1.default.query('SELECT * FROM users WHERE id = ?', [req.user.id]);
     res.json({ success: true, user: serializeUser(rows[0]) });
 });

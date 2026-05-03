@@ -166,12 +166,12 @@ export default function Layout({ children }: { children: ReactElement }) {
                 />
               ) : (
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 font-bold text-brand-600 ring-1 ring-slate-200/50 dark:bg-slate-800 dark:ring-slate-700">
-                  {(user.displayName || user.nickname || user.username || 'U').slice(0, 1)}
+                  {(user.displayName || user.role || user.username || 'U').slice(0, 1)}
                 </div>
               )}
               <div className="min-w-0">
                 <div className="mb-1 max-w-36 truncate text-sm font-bold leading-none text-slate-800 dark:text-slate-100">
-                  {user.displayName || user.nickname || user.username}
+                  {user.displayName || user.role || user.username}
                 </div>
                 <div className="max-w-36 truncate text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                   {user.username}

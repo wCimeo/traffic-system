@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import pool from './db';
 import axios from 'axios';
-import authRouter, { ensureUserTableMigration } from './auth';
+import authRouter, { ensureUserTableMigration, requireAuth } from './auth';
 import cron from 'node-cron';
 import redis from './redis';
 
@@ -16,6 +16,26 @@ app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 app.use('/api/auth', authRouter);
+
+type AuthenticatedRequest = express.Request & {
+  user?: {
+    id: number;
+    role?: string | null;
+    role_id?: string | null;
+  };
+};
+
+function isValidRoleId(value: string | null | undefined) {
+  if (!value) return false;
+  return /^(S|G)\d{4,}$/.test(String(value).trim());
+}
+
+async function getUsersRoleIdSet() {
+  const [rows]: any = await pool.query(
+    `SELECT role_id FROM users WHERE role_id IS NOT NULL AND role_id <> ''`
+  );
+  return new Set<string>((rows || []).map((row: any) => String(row.role_id)));
+}
 
 async function ensureIncidentsTableMigration() {
   await pool.query(`
@@ -216,14 +236,29 @@ app.get('/api/incidents', async (req, res) => {
   }
 });
 
-app.post('/api/incidents', async (req, res) => {
+app.post('/api/incidents', requireAuth, async (req: AuthenticatedRequest, res) => {
   const { node_id, type, description, severity, reporter_id, handler_id } = req.body;
   try {
-    const normalizedStatus = handler_id ? 'active' : 'reported';
+    const reporterId = String(reporter_id || req.user?.role_id || '').trim();
+    const handlerId = String(handler_id || '').trim();
+    if (!isValidRoleId(reporterId)) {
+      return res.status(400).json({ success: false, error: '上报人ID格式不合法，应为 S0001 或 G0001' });
+    }
+    if (handlerId && !isValidRoleId(handlerId)) {
+      return res.status(400).json({ success: false, error: '处理人ID格式不合法，应为 S0001 或 G0001' });
+    }
+    const userRoleIdSet = await getUsersRoleIdSet();
+    if (!userRoleIdSet.has(reporterId)) {
+      return res.status(400).json({ success: false, error: '上报人ID不存在于用户表' });
+    }
+    if (handlerId && !userRoleIdSet.has(handlerId)) {
+      return res.status(400).json({ success: false, error: '处理人ID不存在于用户表' });
+    }
+    const normalizedStatus = handlerId ? 'active' : 'reported';
     const [result]: any = await pool.query(
       `INSERT INTO incidents (node_id, type, description, severity, status, reporter_id, handler_id, created_at)
        VALUES (?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NOW())`,
-      [node_id, type, description, severity, normalizedStatus, reporter_id || '', handler_id || '']
+      [node_id, type, description, severity, normalizedStatus, reporterId, handlerId]
     );
     res.json({ success: true, id: result.insertId });
   } catch (err) {
@@ -231,18 +266,28 @@ app.post('/api/incidents', async (req, res) => {
   }
 });
 
-app.put('/api/incidents/:id', async (req, res) => {
+app.put('/api/incidents/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
   const { status, handler_id } = req.body;
   const validStatus = new Set(['reported', 'active', 'resolved', 'ignored']);
   const nextStatus = validStatus.has(status) ? status : 'active';
   try {
+    const handlerId = String(handler_id || req.user?.role_id || '').trim();
+    if (handlerId && !isValidRoleId(handlerId)) {
+      return res.status(400).json({ success: false, error: '处理人ID格式不合法，应为 S0001 或 G0001' });
+    }
+    if (handlerId) {
+      const userRoleIdSet = await getUsersRoleIdSet();
+      if (!userRoleIdSet.has(handlerId)) {
+        return res.status(400).json({ success: false, error: '处理人ID不存在于用户表' });
+      }
+    }
     await pool.query(
       `UPDATE incidents
        SET status = ?,
            handler_id = COALESCE(NULLIF(?, ''), handler_id),
            handled_at = CASE WHEN ? IN ('resolved', 'ignored') THEN NOW() ELSE handled_at END
        WHERE id = ?`,
-      [nextStatus, handler_id || '', nextStatus, req.params.id]
+      [nextStatus, handlerId, nextStatus, req.params.id]
     );
     res.json({ success: true });
   } catch (err) {
@@ -262,19 +307,25 @@ app.delete('/api/incidents/:id', async (req, res) => {
 app.post('/api/incidents/mock-seed', async (req, res) => {
   const count = Math.max(1, Math.min(30, Number(req.body?.count) || 8));
   const types = ['交通事故', '道路施工', '异常拥堵', '信号灯故障', '抛锚车辆'];
-  const reporters = ['u1001', 'u1002', 'u1003', 'sys_camera', 'ops_noc'];
-  const handlers = ['op2001', 'op2002', 'op2003', ''];
   const statuses = ['reported', 'active', 'resolved', 'ignored'];
 
   try {
+    const [users]: any = await pool.query(
+      `SELECT role_id FROM users WHERE role_id IS NOT NULL AND role_id <> '' ORDER BY role_id ASC`
+    );
+    const roleIds = (users || []).map((u: any) => String(u.role_id));
+    if (roleIds.length === 0) {
+      return res.status(400).json({ success: false, error: '用户表中暂无可用role_id，无法生成模拟事件' });
+    }
+
     const values: any[] = [];
     for (let i = 0; i < count; i += 1) {
       const node = NODES_META[Math.floor(Math.random() * NODES_META.length)];
       const type = types[Math.floor(Math.random() * types.length)];
       const severity = 1 + Math.floor(Math.random() * 3);
       const status = statuses[Math.floor(Math.random() * statuses.length)];
-      const reporter = reporters[Math.floor(Math.random() * reporters.length)];
-      const handler = handlers[Math.floor(Math.random() * handlers.length)];
+      const reporter = roleIds[Math.floor(Math.random() * roleIds.length)];
+      const handler = Math.random() < 0.25 ? '' : roleIds[Math.floor(Math.random() * roleIds.length)];
       const minutesAgo = Math.floor(Math.random() * 360);
       values.push([
         node.id,

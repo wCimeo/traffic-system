@@ -13,6 +13,7 @@ import {
   Trash2,
   Sparkles,
   UserRound,
+  ShieldCheck,
 } from 'lucide-react';
 import api from '../api';
 import { useToast } from '../components/ToastProvider';
@@ -30,6 +31,19 @@ type Incident = {
   handler_id?: string | null;
   created_at: string;
   handled_at?: string | null;
+};
+
+type CurrentUser = {
+  id?: number;
+  role?: string | null;
+  roleId?: string | null;
+};
+
+type UserOption = {
+  id: number;
+  username?: string | null;
+  role?: string | null;
+  role_id?: string | null;
 };
 
 const NODE_META = [
@@ -70,19 +84,26 @@ const FILTER_ITEMS: Array<{ key: 'all' | IncidentStatus; label: string; icon: an
 
 export default function Incidents() {
   const { showToast } = useToast();
+  const currentUser: CurrentUser = JSON.parse(localStorage.getItem('user') || '{}');
+  const currentRoleId = String(currentUser.roleId || '').trim();
+  const isAdmin = currentUser.role === '管理员';
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [users, setUsers] = useState<UserOption[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [showRoleModal, setShowRoleModal] = useState(false);
   const [filter, setFilter] = useState<'all' | IncidentStatus>('all');
   const [keyword, setKeyword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [roleSubmitting, setRoleSubmitting] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  const [roleForm, setRoleForm] = useState<{ userId: string; role: '管理员' | '执行者' }>({ userId: '', role: '执行者' });
 
   const [form, setForm] = useState({
     node_id: 'A1',
     type: '交通事故',
     description: '',
     severity: 1,
-    reporter_id: '',
+    reporter_id: currentRoleId,
     handler_id: '',
   });
 
@@ -91,10 +112,24 @@ export default function Incidents() {
     setIncidents((res.data.data || []) as Incident[]);
   };
 
+  const loadUsers = async () => {
+    const res = await api.get('/api/auth/users');
+    const list = (res.data.users || []) as UserOption[];
+    setUsers(list);
+    setForm((curr) => ({
+      ...curr,
+      reporter_id: curr.reporter_id || currentRoleId || list[0]?.role_id || '',
+    }));
+  };
+
   useEffect(() => {
     loadIncidents().catch((e) => {
       console.error(e);
       setIncidents([]);
+    });
+    loadUsers().catch((e) => {
+      console.error(e);
+      setUsers([]);
     });
   }, []);
 
@@ -135,7 +170,7 @@ export default function Incidents() {
         type: '交通事故',
         description: '',
         severity: 1,
-        reporter_id: '',
+        reporter_id: currentRoleId || users[0]?.role_id || '',
         handler_id: '',
       });
       setShowForm(false);
@@ -150,7 +185,7 @@ export default function Incidents() {
 
   const updateIncidentStatus = async (id: number, status: IncidentStatus, handlerId?: string) => {
     try {
-      await api.put(`/api/incidents/${id}`, { status, handler_id: handlerId || '' });
+      await api.put(`/api/incidents/${id}`, { status, handler_id: handlerId || currentRoleId || '' });
       await loadIncidents();
       const labelMap: Record<IncidentStatus, string> = {
         reported: '待受理',
@@ -187,6 +222,24 @@ export default function Incidents() {
     }
   };
 
+  const updateUserRole = async () => {
+    if (!roleForm.userId) {
+      showToast('请选择需要修改身份的用户', 'error');
+      return;
+    }
+    setRoleSubmitting(true);
+    try {
+      await api.post(`/api/auth/users/${roleForm.userId}/role`, { role: roleForm.role });
+      await loadUsers();
+      setShowRoleModal(false);
+      showToast('用户身份更新成功', 'success');
+    } catch (err: any) {
+      showToast(err?.response?.data?.error || '用户身份更新失败', 'error');
+    } finally {
+      setRoleSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-8 pb-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -197,6 +250,12 @@ export default function Incidents() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {isAdmin && (
+            <button onClick={() => setShowRoleModal(true)} className="btn-ghost gap-2">
+              <ShieldCheck className="h-4 w-4" />
+              <span>身份管理</span>
+            </button>
+          )}
           <button onClick={seedMockData} disabled={seeding} className="btn-ghost gap-2">
             <Sparkles className="h-4 w-4" />
             <span>{seeding ? '生成中...' : '生成模拟事件'}</span>
@@ -388,7 +447,7 @@ export default function Incidents() {
                       <input
                         value={form.reporter_id}
                         onChange={(e) => setForm({ ...form, reporter_id: e.target.value })}
-                        placeholder="例如 reporter_1001"
+                        placeholder="例如 S0001 或 G0001"
                         className="input-base pl-10 pr-4"
                       />
                     </div>
@@ -400,7 +459,7 @@ export default function Incidents() {
                       <input
                         value={form.handler_id}
                         onChange={(e) => setForm({ ...form, handler_id: e.target.value })}
-                        placeholder="例如 handler_2008"
+                        placeholder="例如 G0002 或 S0003"
                         className="input-base pl-10 pr-4"
                       />
                     </div>
@@ -450,6 +509,69 @@ export default function Incidents() {
               </div>
             </motion.div>
           </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
+        )}
+
+      {typeof document !== 'undefined' &&
+        createPortal(
+          <AnimatePresence>
+            {showRoleModal && isAdmin && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[131] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-6"
+              >
+                <motion.div
+                  initial={{ scale: 0.95, y: 20, opacity: 0 }}
+                  animate={{ scale: 1, y: 0, opacity: 1 }}
+                  exit={{ scale: 0.95, y: 20, opacity: 0 }}
+                  className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden"
+                >
+                  <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                    <h3 className="text-xl font-black text-slate-900">用户身份管理</h3>
+                    <button onClick={() => setShowRoleModal(false)} className="h-10 w-10 flex items-center justify-center rounded-xl bg-slate-100 text-slate-400 hover:text-red-500">
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-500">选择用户</label>
+                      <select
+                        className="input-base px-4"
+                        value={roleForm.userId}
+                        onChange={(e) => setRoleForm((curr) => ({ ...curr, userId: e.target.value }))}
+                      >
+                        <option value="">请选择</option>
+                        {users.map((u) => (
+                          <option key={u.id} value={String(u.id)}>
+                            {(u.username || `用户${u.id}`)}：{u.role_id}（当前{u.role || '执行者'}）
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-500">目标身份</label>
+                      <select
+                        className="input-base px-4"
+                        value={roleForm.role}
+                        onChange={(e) => setRoleForm((curr) => ({ ...curr, role: e.target.value as '管理员' | '执行者' }))}
+                      >
+                        <option value="执行者">执行者</option>
+                        <option value="管理员">管理员</option>
+                      </select>
+                    </div>
+                    <div className="pt-2 flex gap-3">
+                      <button onClick={() => setShowRoleModal(false)} className="btn-ghost flex-1 !h-11">取消</button>
+                      <button onClick={updateUserRole} disabled={roleSubmitting} className="btn-primary flex-1 !h-11">
+                        {roleSubmitting ? '更新中...' : '确认更新'}
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              </motion.div>
             )}
           </AnimatePresence>,
           document.body
