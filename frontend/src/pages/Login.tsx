@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { ArrowRight, Lock, MessageSquareText, Phone, Radio, RefreshCw, ShieldCheck, User, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Brain, Lock, Map, MessageSquareText, Navigation, Phone, Radio, RefreshCw, ShieldCheck, User, Zap } from 'lucide-react';
 import api from '../api';
 import { useToast } from '../components/ToastProvider';
+import trafficIcon from '../assets/traffic.png';
 
 type LoginMode = 'password' | 'phone' | 'register';
 type CaptchaState = { captchaId: string; svg: string; expiresIn?: number };
@@ -182,20 +183,18 @@ export default function Login() {
         </div>
         <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }} className="relative z-10">
           <div className="mb-16 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-white shadow-lg shadow-brand-500/20">
-              <Radio className="h-6 w-6 stroke-[2.5px]" />
-            </div>
-            <span className="text-xl font-black uppercase tracking-tighter text-white">Traffic Matrix</span>
+            <img src={trafficIcon} alt="Logo" className="h-10 w-10 rounded-xl shadow-lg" />
+            <span className="text-3xl font-black uppercase tracking-tighter text-white">安全身份认证</span>
           </div>
-          <h1 className="mb-8 text-6xl font-black leading-[0.95] tracking-tight text-white">安全身份认证</h1>
-          <div className="grid grid-cols-2 gap-4">
-            {[{ icon: ShieldCheck, label: '图形校验', desc: 'Captcha' }, { icon: MessageSquareText, label: '短信模拟', desc: 'Dev SMS' }, { icon: Lock, label: 'BCrypt', desc: 'Password Hash' }, { icon: Zap, label: '会话令牌', desc: 'Session Token' }].map((item) => (
+          <h1 className="mb-55  text-5xl font-black leading-[0.95] tracking-tight text-white">智能交通流量监控与预测系统</h1>
+          <div className="grid grid-cols-2 gap-8">
+            {[{ icon: Brain, label: 'AI预测', desc: 'LST-GCN模型' }, { icon: Map, label: '实时路网', desc: '动态可视化' }, { icon: AlertTriangle, label: '事件预警', desc: '秒级响应' }, { icon: Navigation, label: '智能路线', desc: '多策略推荐' }].map((item) => (
               <div key={item.label} className="rounded-3xl border border-white/10 bg-white/5 p-5">
                 <div className="mb-2 flex items-center gap-2">
-                  <item.icon className="h-3 w-3 text-brand-400" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{item.label}</span>
+                  <item.icon className="h-3 w-3 text-white" />
+                  <span className="text-sm font-black uppercase tracking-widest text-white">{item.label}</span>
                 </div>
-                <div className="text-sm font-black uppercase tracking-tight text-white">{item.desc}</div>
+                <div className="text-xs font-medium text-slate-300">{item.desc}</div>
               </div>
             ))}
           </div>
