@@ -45,8 +45,8 @@ class LSTGCN(nn.Module):
 
 # ─── 加载权重和元数据 ──────────────────────────────────────
 BASE_DIR = os.path.dirname(__file__)
-WEIGHT_PATH   = os.path.join(BASE_DIR, 'lst_gcn_weights_10nodes.pth')
-METADATA_PATH = os.path.join(BASE_DIR, 'lst_gcn_10nodes_metadata.json')
+WEIGHT_PATH   = os.path.join(BASE_DIR, 'lst_gcn_weights_11nodes.pth')
+METADATA_PATH = os.path.join(BASE_DIR, 'lst_gcn_11nodes_metadata.json')
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -78,9 +78,9 @@ def predict():
     请求体格式：
     {
       "window": [
-        {"A1": 38.3, "B2": 45.0, ...},  // 最早时间步
+        {"A1": 38.3, "B2": 45.0, ..., "K11": 36.0},  // 最早时间步
         ...
-        {"A1": 32.1, "B2": 41.0, ...}   // 最新时间步
+        {"A1": 32.1, "B2": 41.0, ..., "K11": 33.5}   // 最新时间步
       ]
     }
     """

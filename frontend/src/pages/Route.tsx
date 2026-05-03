@@ -141,16 +141,7 @@ export default function RoutePage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              resetSelection();
-              setTimeout(() => getDecision(), 0);
-            }}
-            className="btn-ghost"
-          >
-            恢复默认
-          </button>
+        <div className="flex items-center justify-center gap-2">
           <button onClick={() => getDecision()} disabled={loading} className="btn-primary gap-2">
             <Navigation className="h-4 w-4" />
             查询所选路口未来路况
