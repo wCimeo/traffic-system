@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   Plus,
   Search,
@@ -84,6 +85,7 @@ const FILTER_ITEMS: Array<{ key: 'all' | IncidentStatus; label: string; icon: an
 
 export default function Incidents() {
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const currentUser: CurrentUser = JSON.parse(localStorage.getItem('user') || '{}');
   const currentRoleId = String(currentUser.roleId || '').trim();
   const isAdmin = currentUser.role === '管理员';
@@ -240,6 +242,10 @@ export default function Incidents() {
     }
   };
 
+  const handleNodeClick = (nodeId: string) => {
+    navigate(`/map?node=${encodeURIComponent(nodeId)}`);
+  };
+
   return (
     <div className="space-y-8 pb-8">
 
@@ -280,10 +286,10 @@ export default function Incidents() {
               <span>更新员工身份信息</span>
             </button>
           )}
-          {/* <button onClick={seedMockData} disabled={seeding} className="btn-ghost gap-2">
+          <button onClick={seedMockData} disabled={seeding} className="btn-ghost gap-2">
             <Sparkles className="h-4 w-4" />
             <span>{seeding ? '生成中...' : '生成模拟事件'}</span>
-          </button> */}
+          </button>
           <button onClick={() => setShowForm(true)} className="btn-primary gap-2 shadow-lg shadow-slate-900/10">
             <Plus className="h-4 w-4" />
             <span>上报事件</span>
@@ -325,7 +331,14 @@ export default function Incidents() {
                   return (
                     <motion.tr key={item.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="hover:bg-slate-50/60">
                       <td className="px-6 py-4">
-                        <div className="font-black text-slate-800">{item.node_id}</div>
+                        <button
+                          type="button"
+                          onClick={() => handleNodeClick(item.node_id)}
+                          className="font-black text-slate-800 transition-colors hover:text-brand-600 hover:underline"
+                          title={`跳转到地图并聚焦节点 ${item.node_id}`}
+                        >
+                          {item.node_id}
+                        </button>
                       </td>
                       <td className="px-6 py-4 text-sm font-semibold text-slate-700">{item.type}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 max-w-xs truncate">{item.description}</td>

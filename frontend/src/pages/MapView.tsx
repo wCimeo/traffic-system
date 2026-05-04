@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Info, Layers, Maximize2, Minimize2, Navigation, RefreshCw } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../api';
 import { useToast } from '../components/ToastProvider';
 
@@ -124,6 +125,7 @@ const loadAMapSdk = async () => {
 
 export default function MapView() {
   const { showToast } = useToast();
+  const [searchParams] = useSearchParams();
   const mapRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapShellRef = useRef<HTMLDivElement>(null);
@@ -140,6 +142,7 @@ export default function MapView() {
   const [mapStatus, setMapStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [mapError, setMapError] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const requestedNodeId = searchParams.get('node')?.trim().toUpperCase() || '';
 
   const loadLatest = async () => {
     setLoading(true);
@@ -181,6 +184,26 @@ export default function MapView() {
     });
   };
 
+  const openNodeInfoWindow = (node: (typeof NODE_META)[number], record?: any) => {
+    if (!infoWindowRef.current || !mapRef.current) return;
+
+    const lng = getNumericCoordinate(node.lng);
+    const lat = getNumericCoordinate(node.lat);
+    if (lng === null || lat === null) return;
+
+    const speed = record?.speed ?? '--';
+    const content = `
+      <div style="padding: 8px 12px; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
+        <div style="font-weight: bold; font-size: 14px; color: #1e293b; margin-bottom: 4px;">${node.id} 路口</div>
+        <div style="font-size: 12px; color: #64748b;">${node.name}</div>
+        <div style="font-size: 12px; color: #059669; font-weight: bold; margin-top: 4px;">${speed} km/h</div>
+      </div>
+    `;
+
+    infoWindowRef.current.setContent(content);
+    infoWindowRef.current.open(mapRef.current, [lng, lat]);
+  };
+
   const focusNode = (nodeId: string, data = latestRef.current) => {
     const node = NODE_META.find((item) => item.id === nodeId);
     if (!node) return;
@@ -189,6 +212,7 @@ export default function MapView() {
     setSelectedNodeId(nodeId);
     setSelectedNode({ node, record });
     syncMarkerFocus(nodeId);
+    openNodeInfoWindow(node, record);
 
     const lng = getNumericCoordinate(node.lng);
     const lat = getNumericCoordinate(node.lat);
@@ -403,6 +427,14 @@ export default function MapView() {
     selectedNodeIdRef.current = selectedNodeId;
     syncMarkerFocus(selectedNodeId || undefined);
   }, [selectedNodeId]);
+
+  useEffect(() => {
+    if (!requestedNodeId || mapStatus !== 'ready') return;
+    if (!NODE_META.some((node) => node.id === requestedNodeId)) return;
+    if (selectedNodeId === requestedNodeId) return;
+
+    focusNode(requestedNodeId, latest);
+  }, [latest, mapStatus, requestedNodeId, selectedNodeId]);
 
   useEffect(() => {
     if (!selectedNodeId) {
