@@ -793,7 +793,7 @@ export default function Settings() {
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
                     {[
                       { title: '实时路网地图', text: '展示核心路口速度与拥堵状态，支持列表与地图联动。' },
-                      { title: '控制台', text: '汇总采集数据、平均速度、拥堵节点数与预测服务状态。' },
+                      { title: '监控预测平台', text: '汇总采集数据、平均速度、拥堵节点数与预测服务状态。' },
                       { title: '历史档案导出', text: '按时间范围和路口导出 CSV，同时支持预测报表导出。' },
                     ].map((item) => (
                       <div key={item.title} className="rounded-[24px] border border-slate-100 bg-slate-50 p-5">

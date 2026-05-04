@@ -29,7 +29,7 @@ DB_CONFIG = {
     "charset": "utf8mb4",
 }
 
-INTERVAL_SECONDS = 900
+INTERVAL_SECONDS = 300
 
 # 两个矩形区域，每个对角线控制在10公里以内
 RECTANGLES = [
