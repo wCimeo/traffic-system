@@ -360,12 +360,12 @@ export default function Settings() {
     const range = startDate || endDate ? `${startDate || '开始不限'} ~ ${endDate || '结束不限'}` : '全部历史时间';
 
     setExportHistory((curr) => [
-      { id: `${Date.now()}`, type: '历史 CSV 导出', time: new Date().toLocaleString('zh-CN'), scope, range },
+      { id: `${Date.now()}`, type: '历史 数据 导出', time: new Date().toLocaleString('zh-CN'), scope, range },
       ...curr,
     ].slice(0, 10));
 
     window.open(`http://localhost:3001/api/report/export?${params.toString()}&token=${token}`);
-    showToast('历史 CSV 导出已开始', 'success');
+    showToast('历史 数据 导出已开始', 'success');
   };
 
   const handlePredictExport = () => {
@@ -384,9 +384,9 @@ export default function Settings() {
   };
 
   const navItems: Array<{ key: SettingsSection; label: string; icon: typeof User }> = [
-    { key: 'overview', label: '用户信息', icon: User },
-    { key: 'password', label: user.isPasswordSet ? '修改密码' : '设置密码', icon: KeyRound },
-    { key: 'archive', label: '历史档案导出', icon: FileArchive },
+    { key: 'overview', label: '用户主页', icon: User },
+    { key: 'password', label: '安全验证', icon: KeyRound },
+    { key: 'archive', label: '数据导出', icon: FileArchive },
     { key: 'docs', label: '系统说明', icon: BookOpenText },
   ];
 
@@ -458,7 +458,7 @@ export default function Settings() {
                       </div>
                       <div className="flex flex-col gap-4">
                         <div className="text-4xl font-black text-slate-900">{displayName.toUpperCase()}</div>
-                        <div className="text-sm text-slate-500">上次登录时间：{formatDateTime(user.lastLoginTime)}</div>
+                        <div className="text-sm text-slate-500">上次登录时间：{formatDateTime(user.lastLoginTime)}（7天有效）</div>
                       </div>
                     </div>
                     <button
@@ -598,7 +598,6 @@ export default function Settings() {
                 )}
 
                 <div className="space-y-5">
-                  <div className="text-xs font-black tracking-wider text-slate-400">修改密码</div>
                   {user.isPasswordSet && (
                     <div className="space-y-2">
                       <label className="ml-1 text-[11px] font-bold text-slate-500">当前密码</label>
@@ -667,7 +666,6 @@ export default function Settings() {
                   </div>
 
                   <div className="space-y-5">
-                    <div className="text-xs font-black tracking-wider text-slate-400">手机号验证</div>
                     <div className="text-sm font-black text-slate-900">{user.phone ? '已设置' : '未设置'}</div>
                     <div className="flex gap-2">
                       <input
@@ -714,8 +712,8 @@ export default function Settings() {
                     <Download className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-black text-slate-900">历史档案数据导出</h3>
-                    <p className="text-sm text-slate-500">导出历史路况档案和预测报表。</p>
+                    <h3 className="text-lg font-black text-slate-900">档案数据导出</h3>
+                    <p className="text-sm text-slate-500">导出历史路况数据或预测报表。</p>
                   </div>
                 </div>
 
@@ -739,20 +737,16 @@ export default function Settings() {
                   </div>
                 </div>
 
-                <div className="mt-6 rounded-[28px] bg-slate-50 p-6 ring-1 ring-slate-100">
-                  <div className="mb-4 text-base font-black text-slate-900">导出说明</div>
-                  <p className="text-sm leading-6 text-slate-500">CSV 会根据时间范围和路口筛选条件生成，适合离线分析与论文附录。</p>
-                  <div className="mt-5 flex flex-wrap gap-3">
+                  <div className="mt-5 flex flex-wrap gap-3 justify-end">     
                     <button onClick={handleExport} className="btn-primary gap-2">
                       <Download className="h-4 w-4" />
-                      <span>导出历史 CSV</span>
+                      <span>导出历史数据</span>
                     </button>
                     <button onClick={handlePredictExport} className="btn-primary gap-2">
                       <FileArchive className="h-4 w-4" />
                       <span>导出预测数据</span>
                     </button>
                   </div>
-                </div>
 
                 <div className="mt-6 rounded-[28px] bg-slate-50 p-6 ring-1 ring-slate-100">
                   <div className="mb-4 text-base font-black text-slate-900">最近导出记录</div>
@@ -786,15 +780,17 @@ export default function Settings() {
                       <MessageSquareText className="h-5 w-5" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-black text-slate-900">系统文字说明</h3>
+                      <h3 className="text-lg font-black text-slate-900">功能一览</h3>
                       <p className="text-sm text-slate-500">面向日常运维、数据检查和展示汇报的统一口径。</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                     {[
-                      { title: '实时路网地图', text: '展示核心路口速度与拥堵状态，支持列表与地图联动。' },
+                      
                       { title: '监控预测平台', text: '汇总采集数据、平均速度、拥堵节点数与预测服务状态。' },
-                      { title: '历史档案导出', text: '按时间范围和路口导出 CSV，同时支持预测报表导出。' },
+                      { title: '实时路网地图', text: '展示核心路口速度与拥堵状态，支持列表与地图联动。' },
+                      { title: '突发事件监控', text: '实时监控并预警交通突发事件。' },
+                      { title: '智能路线推荐', text: '基于路况数据，提供智能路线推荐。' },
                     ].map((item) => (
                       <div key={item.title} className="rounded-[24px] border border-slate-100 bg-slate-50 p-5">
                         <div className="text-sm font-black text-slate-900">{item.title}</div>
