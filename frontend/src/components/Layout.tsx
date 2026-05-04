@@ -80,13 +80,6 @@ export default function Layout({ children }: { children: ReactElement }) {
             </div>
             <div className={isSidebarCollapsed ? 'hidden' : ''}>
               <h1 className="text-sm font-black uppercase leading-tight tracking-widest text-slate-900 dark:text-slate-50">智能交通流量<br />监控与预测系统</h1>
-              <div className="mt-0.5 flex items-center gap-1.5">
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-400 opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-brand-500" />
-                </span>
-                <span className="text-[10px] font-bold uppercase tracking-tighter text-brand-600/80 dark:text-brand-300">实时节点态势引擎</span>
-              </div>
             </div>
           </div>
 

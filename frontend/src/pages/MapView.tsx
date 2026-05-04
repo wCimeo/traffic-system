@@ -130,6 +130,7 @@ export default function MapView() {
   const overlaysRef = useRef<any[]>([]);
   const markersRef = useRef<Record<string, any>>({});
   const latestRef = useRef<any[]>([]);
+  const infoWindowRef = useRef<any>(null);
   const selectedNodeIdRef = useRef<string | null>(null);
   const [latest, setLatest] = useState<any[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -236,6 +237,7 @@ export default function MapView() {
         cursor: 'pointer',
         zIndex: selectedNodeIdRef.current === node.id ? 200 : 100,
         extData: { node, record },
+        hitRange: 50, // 扩大可点击区域
       });
 
       const label = new window.AMap.Text({
@@ -255,8 +257,50 @@ export default function MapView() {
       marker.on('click', () => {
         focusNode(node.id, data);
       });
+
+      // 鼠标悬停显示信息窗体
+      marker.on('mouseover', () => {
+        if (!infoWindowRef.current) return;
+        const speed = record?.speed ?? '--';
+        const nodeName = node.name;
+        const content = `
+          <div style="padding: 8px 12px; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
+            <div style="font-weight: bold; font-size: 14px; color: #1e293b; margin-bottom: 4px;">${node.id} 路口</div>
+            <div style="font-size: 12px; color: #64748b;">${nodeName}</div>
+            <div style="font-size: 12px; color: #059669; font-weight: bold; margin-top: 4px;">${speed} km/h</div>
+          </div>
+        `;
+        infoWindowRef.current.setContent(content);
+        infoWindowRef.current.open(mapRef.current, [lng, lat]);
+      });
+
+      marker.on('mouseout', () => {
+        if (!infoWindowRef.current) return;
+        infoWindowRef.current.close();
+      });
+
       label.on?.('click', () => {
         focusNode(node.id, data);
+      });
+
+      label.on?.('mouseover', () => {
+        if (!infoWindowRef.current) return;
+        const speed = record?.speed ?? '--';
+        const nodeName = node.name;
+        const content = `
+          <div style="padding: 8px 12px; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
+            <div style="font-weight: bold; font-size: 14px; color: #1e293b; margin-bottom: 4px;">${node.id} 路口</div>
+            <div style="font-size: 12px; color: #64748b;">${nodeName}</div>
+            <div style="font-size: 12px; color: #059669; font-weight: bold; margin-top: 4px;">${speed} km/h</div>
+          </div>
+        `;
+        infoWindowRef.current.setContent(content);
+        infoWindowRef.current.open(mapRef.current, [lng, lat]);
+      });
+
+      label.on?.('mouseout', () => {
+        if (!infoWindowRef.current) return;
+        infoWindowRef.current.close();
       });
 
       marker.setMap(mapRef.current);
@@ -295,6 +339,14 @@ export default function MapView() {
         });
 
         mapRef.current = map;
+
+        // 创建信息窗体
+        infoWindowRef.current = new window.AMap.InfoWindow({
+          isCustom: false,
+          closeWhenClickMap: true,
+          offset: new window.AMap.Pixel(0, -15),
+        });
+
         let rendered = false;
         const renderMapMarkers = () => {
           if (disposed || rendered) return;
@@ -408,27 +460,6 @@ export default function MapView() {
 
   return (
     <div className="space-y-5 pb-4">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-950">实时路网地图</h1>
-          <p className="mt-1 text-[11px] font-semibold tracking-wide text-slate-500">
-            读取最新路况数据并在地图上展示核心路口的拥堵状态与通行速度。
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-3 rounded-2xl border border-slate-200/60 bg-white px-4 py-2 shadow-soft">
-            <RefreshCw className={`h-4 w-4 text-brand-500 ${loading ? 'animate-spin' : ''}`} />
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-              最近同步 {lastUpdate || '--'}
-            </span>
-          </div>
-          <button onClick={handleRefresh} className="btn-primary gap-2">
-            <Layers className="h-4 w-4" />
-            <span>刷新地图</span>
-          </button>
-        </div>
-      </div>
-
       <div className="console-card bg-white p-4 shadow-sm">
         <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
@@ -448,7 +479,7 @@ export default function MapView() {
               >
                 {STATUS_LABEL[selectedNode.record?.congestion_status ?? 0]}
               </span>
-              <span className="max-w-[16rem] truncate text-[10px] font-bold text-slate-400">{selectedNode.node.name}</span>
+              <span className="max-w-[16rem] truncate text-[10px] font-bold text-slate-300">{selectedNode.node.name}</span>
             </div>
           )}
         </div>
@@ -464,31 +495,43 @@ export default function MapView() {
                 onClick={() => focusNode(node.id)}
                 className={`flex min-w-0 items-center justify-between rounded-2xl border px-3.5 py-3 text-left transition-all ${
                   isActive
-                    ? 'border-slate-900 bg-slate-900 shadow-xl'
-                    : 'border-slate-100/70 bg-slate-50/70 hover:border-slate-200 hover:bg-white'
+                    ? 'border-brand-500 bg-brand-500 shadow-xl shadow-brand-500/20'
+                    : 'border-slate-100/70 bg-slate-50/70 hover:border-brand-200 hover:bg-white'
                 }`}
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <div
                     className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[10px] font-black ${
-                      isActive ? 'bg-white/10 text-brand-400' : 'bg-white text-slate-500 shadow-sm'
+                      isActive ? 'bg-white/20 text-white' : 'bg-white text-slate-500 shadow-sm'
                     }`}
                   >
                     {node.id}
                   </div>
                   <div className="min-w-0">
-                    <div className={`text-[10px] font-black uppercase tracking-tight ${isActive ? 'text-white' : 'text-slate-800'}`}>
-                      {node.id} 路口
-                    </div>
-                    <div className="max-w-[7rem] truncate text-[10px] font-medium text-slate-400">{node.name}</div>
+                    <div className="max-w-[7rem] truncate text-[10px] font-medium text-slate-700">{node.name}</div>
                   </div>
                 </div>
-                <div className={`ml-3 shrink-0 text-[10px] font-black data-mono ${isActive ? 'text-brand-400' : 'text-slate-500'}`}>
+                <div className={`ml-3 shrink-0 text-[10px] font-black data-mono ${isActive ? 'text-white' : 'text-brand-600'}`}>
                   {record ? `${record.speed} km/h` : '--'}
                 </div>
               </motion.button>
             );
           })}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-end">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 rounded-2xl border border-slate-200/60 bg-white px-4 py-2 shadow-soft">
+            <RefreshCw className={`h-4 w-4 text-brand-500 ${loading ? 'animate-spin' : ''}`} />
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+              最近同步 {lastUpdate || '--'}
+            </span>
+          </div>
+          <button onClick={handleRefresh} className="btn-primary gap-2">
+            <Layers className="h-4 w-4" />
+            <span>刷新地图</span>
+          </button>
         </div>
       </div>
 
