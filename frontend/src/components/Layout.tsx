@@ -15,18 +15,18 @@ import { useToast } from './ToastProvider';
 
 const trafficIconUrl = '/traffic.png';
 const navItems = [
-  { path: '/dashboard', label: '监控预测平台', icon: LayoutDashboard },
+  { path: '/dashboard', label: '监测总览面板', icon: LayoutDashboard },
   { path: '/map', label: '实时路网地图', icon: MapIcon },
   { path: '/incidents', label: '突发事件监控', icon: AlertTriangle },
   { path: '/route', label: '智能路线推荐', icon: Navigation },
-  { path: '/settings', label: '系统设置', icon: SettingsIcon },
+  { path: '/settings', label: '设置', icon: SettingsIcon },
 ];
 const pageTitles: Record<string, string> = {
-  '/dashboard': '监控预测平台',
+  '/dashboard': '监测总览面板',
   '/map': '实时路网地图',
   '/incidents': '突发事件监控',
   '/route': '智能路线推荐',
-  '/settings': '系统设置',
+  '/settings': '设置',
 };
 const defaultUser = { displayName: '管理员', username: 'admin_traffic' };
 

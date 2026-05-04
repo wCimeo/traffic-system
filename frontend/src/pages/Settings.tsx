@@ -787,7 +787,7 @@ export default function Settings() {
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                     {[
                       
-                      { title: '监控预测平台', text: '汇总采集数据、平均速度、拥堵节点数与预测服务状态。' },
+                      { title: '监测总览面板', text: '汇总采集数据、平均速度、拥堵节点数与预测服务状态。' },
                       { title: '实时路网地图', text: '展示核心路口速度与拥堵状态，支持列表与地图联动。' },
                       { title: '突发事件监控', text: '实时监控并预警交通突发事件。' },
                       { title: '智能路线推荐', text: '基于路况数据，提供智能路线推荐。' },

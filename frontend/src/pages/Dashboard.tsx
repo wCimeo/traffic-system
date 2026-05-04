@@ -33,6 +33,7 @@ export default function Dashboard() {
   const [predictions, setPredictions] = useState<any[]>([]);
   const [selectedNode, setSelectedNode] = useState('A1');
   const [predicting, setPredicting] = useState(false);
+  const [pendingIncidents, setPendingIncidents] = useState(0);
 
   // 加载最新路况
   const loadLatest = async () => {
@@ -97,9 +98,21 @@ export default function Dashboard() {
     }
   };
 
+  const loadPendingIncidents = async () => {
+    try {
+      const res = await api.get('/api/incidents');
+      const incidents = res.data.data || [];
+      const count = incidents.filter((i: any) => i.status === 'reported').length;
+      setPendingIncidents(count);
+    } catch (e) {
+      setPendingIncidents(0);
+    }
+  };
+
   useEffect(() => {
     loadLatest();
     loadPredictions();
+    loadPendingIncidents();
     const timer = setInterval(loadLatest, 60000);
     return () => clearInterval(timer);
   }, []);
@@ -111,7 +124,7 @@ export default function Dashboard() {
   const avgSpeed = latest.length
     ? (latest.reduce((s, r) => s + r.speed, 0) / latest.length).toFixed(1)
     : '--';
-  const congested = latest.filter((r) => r.congestion_status >= 3).length;
+  const congested = latest.filter((r) => r.congestion_status >= 2).length;
 
   const container = {
     hidden: { opacity: 0 },
@@ -140,13 +153,13 @@ export default function Dashboard() {
         {[
           { label: '监测节点总数', value: `${latest.length}`, unit: '个', icon: MapPin, color: 'text-slate-900' },
           { label: '区域平均车速', value: avgSpeed, unit: 'km/h', icon: Wind, color: 'text-brand-600' },
-          { label: '高度拥堵预警', value: `${congested}`, unit: '处', icon: Activity, color: 'text-red-600' },
-          { label: '系统算力负载', value: '100', unit: '%', icon: Zap, color: 'text-amber-500' },
+          { label: '拥堵路口预警', value: `${congested}`, unit: '处', icon: Activity, color: 'text-red-600' },
+          { label: '待受理事件数', value: `${pendingIncidents}`, unit: '件', icon: Zap, color: 'text-amber-500' },
         ].map((card) => (
           <motion.div key={card.label} variants={item} className="metric-card group relative overflow-hidden">
             <div className="relative z-10">
               <div className="flex items-center justify-between mb-6">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-slate-500 transition-colors">{card.label}</span>
+                <span className="text-[12px] font-black uppercase tracking-widest text-slate-600 group-hover:text-slate-500 transition-colors">{card.label}</span>
                 <card.icon className={`h-5 w-5 ${card.color} opacity-20 group-hover:opacity-100 transition-all duration-500`} />
               </div>
               <div className="flex items-baseline gap-2">
@@ -178,7 +191,7 @@ export default function Dashboard() {
             onChange={(e) => setSelectedNode(e.target.value)}
           >
             {NODE_OPTIONS.map((n) => (
-              <option key={n} value={n}>分布式基站: {n}</option>
+              <option key={n} value={n}>路口: {n}</option>
             ))}
           </select>
           <button
