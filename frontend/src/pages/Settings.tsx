@@ -397,13 +397,7 @@ export default function Settings() {
 
   return (
     <div className="space-y-10 pb-12">
-      <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div>
-          <h1 className="text-4xl font-black tracking-tight text-slate-950">系统设置</h1>
-          <p className="mt-2 text-sm font-medium text-slate-500">管理账号资料、密码安全、主题偏好和数据导出能力。</p>
-        </div>
-      </div>
-
+      
       <div className="grid grid-cols-1 gap-10 xl:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="console-card h-fit bg-white p-5">
           <div className="px-3 pb-4 pt-2">
