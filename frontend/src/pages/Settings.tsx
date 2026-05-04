@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom';
 import {
   BookOpenText,
   Check,
+  ChevronDown,
   ChevronRight,
   Download,
   FileArchive,
@@ -382,11 +383,11 @@ export default function Settings() {
     showToast('预测数据导出已开始', 'success');
   };
 
-  const navItems: Array<{ key: SettingsSection; label: string; desc: string; icon: typeof User }> = [
-    { key: 'overview', label: '用户信息', desc: '账号资料与登录记录', icon: User },
-    { key: 'password', label: user.isPasswordSet ? '修改密码' : '设置密码', desc: '账号安全与手机号验证', icon: KeyRound },
-    { key: 'archive', label: '历史档案导出', desc: '历史路况与数据报表', icon: FileArchive },
-    { key: 'docs', label: '系统说明', desc: '术语与业务口径说明', icon: BookOpenText },
+  const navItems: Array<{ key: SettingsSection; label: string; icon: typeof User }> = [
+    { key: 'overview', label: '用户信息', icon: User },
+    { key: 'password', label: user.isPasswordSet ? '修改密码' : '设置密码', icon: KeyRound },
+    { key: 'archive', label: '历史档案导出', icon: FileArchive },
+    { key: 'docs', label: '系统说明', icon: BookOpenText },
   ];
 
   const themeOptions: Array<{ key: ThemeMode; label: string; desc: string; icon: typeof Sun }> = [
@@ -398,13 +399,9 @@ export default function Settings() {
   return (
     <div className="space-y-10 pb-12">
       
-      <div className="grid grid-cols-1 gap-10 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <aside className="console-card h-fit bg-white p-5">
-          <div className="px-3 pb-4 pt-2">
-            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">Settings</div>
-            <div className="mt-2 text-lg font-black text-slate-900">控制台偏好与账号安全</div>
-          </div>
-          <div className="space-y-2">
+      <div className="space-y-6">
+        <section className="console-card bg-white p-5">
+          <div className="grid grid-cols-1 gap-3 px-3 pb-3 sm:grid-cols-2 xl:grid-cols-4">
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = activeSection === item.key;
@@ -413,22 +410,30 @@ export default function Settings() {
                   key={item.key}
                   type="button"
                   onClick={() => setActiveSection(item.key)}
-                  className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
-                    active ? 'border-brand-200 bg-brand-50 text-brand-700' : 'border-transparent bg-slate-50 text-slate-600 hover:border-slate-100 hover:bg-white'
+                  className={`group w-full rounded-[24px] border px-5 py-4 text-left transition-all duration-300 ${
+                    active
+                      ? 'border-brand-200 bg-brand-50 text-brand-700 shadow-lg shadow-brand-100/40'
+                      : 'border-slate-200/70 bg-slate-50/80 text-slate-600 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-lg hover:shadow-slate-200/40'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <Icon className="h-4 w-4" />
-                    <div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-colors ${
+                          active ? 'bg-brand-600 text-white' : 'bg-white text-slate-500 ring-1 ring-slate-200'
+                        }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </div>
                       <div className="text-sm font-black">{item.label}</div>
-                      <div className="text-xs font-semibold opacity-70">{item.desc}</div>
                     </div>
+                    <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${active ? 'rotate-0 text-brand-500' : 'rotate-90 text-slate-300'}`} />
                   </div>
                 </button>
               );
             })}
           </div>
-        </aside>
+        </section>
 
         <div>
           <AnimatePresence mode="wait">
