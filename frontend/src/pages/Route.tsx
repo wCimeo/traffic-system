@@ -87,21 +87,6 @@ export default function RoutePage() {
 
   return (
     <div className="space-y-8 pb-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-4xl font-black tracking-tight text-slate-950">智能辅助决策路径</h1>
-          <p className="mt-2 text-sm text-slate-500">可多选路口，统一查看 15/30/45/60 分钟后的未来路况建议。</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={resetSelection} className="btn-ghost">
-            重置
-          </button>
-          <button onClick={() => getDecision()} disabled={loading} className="btn-primary gap-2">
-            <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            刷新建议
-          </button>
-        </div>
-      </div>
 
       <div className="console-card space-y-5 p-6">
         <div>
@@ -140,15 +125,23 @@ export default function RoutePage() {
             ))}
           </div>
         </div>
+      </div>
 
-        <div className="flex items-center justify-center gap-2">
+      <div className="flex items-center justify-end">
+        <div className="flex items-center gap-2"> 
           <button onClick={() => getDecision()} disabled={loading} className="btn-primary gap-2">
             <Navigation className="h-4 w-4" />
             查询所选路口未来路况
           </button>
+          <button onClick={() => getDecision()} disabled={loading} className="btn-primary gap-2">
+            <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            刷新建议
+          </button>
+          <button onClick={resetSelection} className="btn-ghost">
+            重置
+          </button>
         </div>
       </div>
-
       {error && <div className="console-card p-4 text-sm text-red-600">{error}</div>}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
