@@ -13,6 +13,8 @@ import {
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useToast } from './ToastProvider';
 
+const trafficIconUrl = '/traffic.png';
+
 const navItems = [
   { path: '/dashboard', label: '控制台总览', icon: LayoutDashboard },
   { path: '/map', label: '实时路网地图', icon: MapIcon },
@@ -73,14 +75,14 @@ export default function Layout({ children }: { children: ReactElement }) {
             <div className="group relative">
               <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-brand-500 to-emerald-400 opacity-25 blur transition duration-1000 group-hover:opacity-40 group-hover:duration-200" />
               <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-lg shadow-brand-500/10 dark:bg-brand-600">
-                <Radio className="h-6 w-6 stroke-[2.5px]" />
+                <img src={trafficIconUrl} alt="Traffic" className="h-8 w-8" />
               </div>
             </div>
             <div>
               <h1 className="text-sm font-black uppercase leading-tight tracking-widest text-slate-900 dark:text-slate-50">
-                Traffic
+                智能交通流量
                 <br />
-                Matrix
+                监控与预测系统
               </h1>
               <div className="mt-0.5 flex items-center gap-1.5">
                 <span className="relative flex h-2 w-2">
@@ -147,12 +149,6 @@ export default function Layout({ children }: { children: ReactElement }) {
             </h2>
           </div>
           <div className="flex min-w-0 items-center gap-4">
-            <div className="hidden items-center gap-2 rounded-full border border-slate-200/50 bg-slate-100 px-3 py-1.5 dark:border-slate-800 dark:bg-slate-900 xl:flex">
-              <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500" />
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-300">
-                智能系统物理链路安全
-              </span>
-            </div>
             <button
               type="button"
               onClick={handleUserInfoClick}
