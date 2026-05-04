@@ -91,6 +91,7 @@ const NODES_META = [
 
 // 健康检查
 NODES_META.push({ id: 'K11', name: '人民南路四段' });
+const NODE_IDS = NODES_META.map((node) => node.id);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
@@ -147,7 +148,6 @@ app.get('/api/traffic/history', async (req, res) => {
 app.post('/api/predict/trigger', async (req, res) => {
   try {
     // 1. 从MySQL取每个节点最近12条速度数据
-    const NODE_IDS = ['A1','B2','C3','D4','E5','F6','G7','H8','I9','J10'];
     const [rows]: any = await pool.query(
       `SELECT node_id, speed, collected_at
        FROM traffic_flow
@@ -381,7 +381,6 @@ app.get('/api/route/decision', async (req, res) => {
   }
 
   try {
-    const NODE_IDS = ['A1','B2','C3','D4','E5','F6','G7','H8','I9','J10','K11'];
     if (!NODE_IDS.includes(nodeId)) {
       return res.status(400).json({ success: false, error: 'invalid node_id' });
     }
@@ -488,7 +487,6 @@ app.get('/api/report/export', async (req, res) => {
 app.get('/api/report/predict-export', async (req, res) => {
   const { node_id } = req.query;
   try {
-    const NODE_IDS = ['A1','B2','C3','D4','E5','F6','G7','H8','I9','J10'];
 
     // 1. 取最近12条作为输入窗口
     const [rows]: any = await pool.query(
@@ -602,8 +600,6 @@ const PORT = process.env.PORT || 3001;
 cron.schedule('*/5 * * * *', async () => {
   console.log(`[${new Date().toLocaleString('zh')}] 定时预测触发...`);
   try {
-    const NODE_IDS = ['A1','B2','C3','D4','E5','F6','G7','H8','I9','J10'];
-
     const [rows]: any = await pool.query(
       `SELECT node_id, speed, collected_at
        FROM traffic_flow
