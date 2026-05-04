@@ -242,30 +242,7 @@ export default function Incidents() {
 
   return (
     <div className="space-y-8 pb-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-4xl font-black tracking-tight text-slate-950">突发事件监控</h1>
-          <p className="mt-2 text-slate-500 font-medium text-xs tracking-wide">
-            待受理 {statusCount.reported} 条，处理中 {statusCount.active} 条，已解决 {statusCount.resolved} 条
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {isAdmin && (
-            <button onClick={() => setShowRoleModal(true)} className="btn-ghost gap-2">
-              <ShieldCheck className="h-4 w-4" />
-              <span>身份管理</span>
-            </button>
-          )}
-          <button onClick={seedMockData} disabled={seeding} className="btn-ghost gap-2">
-            <Sparkles className="h-4 w-4" />
-            <span>{seeding ? '生成中...' : '生成模拟事件'}</span>
-          </button>
-          <button onClick={() => setShowForm(true)} className="btn-primary gap-2 shadow-lg shadow-slate-900/10">
-            <Plus className="h-4 w-4" />
-            <span>上报事件</span>
-          </button>
-        </div>
-      </div>
+
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {FILTER_ITEMS.map((item) => {
@@ -293,6 +270,25 @@ export default function Incidents() {
             </button>
           );
         })}
+      </div>
+
+      <div className="flex flex-col md:flex-row md:items-center justify-end gap-4">
+        <div className="flex items-center gap-3">
+          {isAdmin && (
+            <button onClick={() => setShowRoleModal(true)} className="btn-ghost gap-2">
+              <ShieldCheck className="h-4 w-4" />
+              <span>更新员工身份信息</span>
+            </button>
+          )}
+          {/* <button onClick={seedMockData} disabled={seeding} className="btn-ghost gap-2">
+            <Sparkles className="h-4 w-4" />
+            <span>{seeding ? '生成中...' : '生成模拟事件'}</span>
+          </button> */}
+          <button onClick={() => setShowForm(true)} className="btn-primary gap-2 shadow-lg shadow-slate-900/10">
+            <Plus className="h-4 w-4" />
+            <span>上报事件</span>
+          </button>
+        </div>
       </div>
 
       <div className="console-card overflow-hidden">
@@ -531,7 +527,7 @@ export default function Incidents() {
                   className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden"
                 >
                   <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-                    <h3 className="text-xl font-black text-slate-900">用户身份管理</h3>
+                    <h3 className="text-xl font-black text-slate-900">用户更新员工身份信息</h3>
                     <button onClick={() => setShowRoleModal(false)} className="h-10 w-10 flex items-center justify-center rounded-xl bg-slate-100 text-slate-400 hover:text-red-500">
                       <X className="h-5 w-5" />
                     </button>
@@ -547,7 +543,7 @@ export default function Incidents() {
                         <option value="">请选择</option>
                         {users.map((u) => (
                           <option key={u.id} value={String(u.id)}>
-                            {(u.username || `用户${u.id}`)}：{u.role_id}（当前{u.role || '执行者'}）
+                            {(u.username || `用户${u.id}`)}-{u.role_id}（{u.role || '执行者'}）
                           </option>
                         ))}
                       </select>
