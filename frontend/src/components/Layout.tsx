@@ -15,14 +15,14 @@ import { useToast } from './ToastProvider';
 
 const trafficIconUrl = '/traffic.png';
 const navItems = [
-  { path: '/dashboard', label: '控制台总览', icon: LayoutDashboard },
+  { path: '/dashboard', label: '控制台', icon: LayoutDashboard },
   { path: '/map', label: '实时路网地图', icon: MapIcon },
   { path: '/incidents', label: '突发事件监控', icon: AlertTriangle },
   { path: '/route', label: '智能路线推荐', icon: Navigation },
   { path: '/settings', label: '系统设置', icon: SettingsIcon },
 ];
 const pageTitles: Record<string, string> = {
-  '/dashboard': '控制台总览',
+  '/dashboard': '控制台',
   '/map': '实时路网地图',
   '/incidents': '突发事件监控',
   '/route': '智能路线推荐',

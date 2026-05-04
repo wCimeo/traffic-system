@@ -130,40 +130,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-10 pb-10">
-      {/* Header Info */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <div className="h-2 w-2 rounded-full bg-brand-500 animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">核心节点实时遥测中</span>
-          </div>
-          <h1 className="text-4xl font-black tracking-tight text-slate-950">数字化运行监控台</h1>
-          <p className="mt-2 text-slate-500 font-medium max-w-xl leading-relaxed">
-            集中实时采集成都核心路口流量，依托 <span className="text-slate-900 font-bold italic">LST-GCN</span> 时空建模实现流速推演。
-          </p>
-        </div>
-        <div className="flex items-center gap-3 bg-white p-2 rounded-2xl border border-slate-200/60 shadow-soft">
-          <select
-            className="h-11 pl-4 pr-10 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-700 focus:ring-2 focus:ring-brand-500/20 outline-none appearance-none cursor-pointer"
-            style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\' stroke-width=\'2\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.75rem center', backgroundSize: '1rem' }}
-            value={selectedNode}
-            onChange={(e) => setSelectedNode(e.target.value)}
-          >
-            {NODE_OPTIONS.map((n) => (
-              <option key={n} value={n}>分布式基站: {n}</option>
-            ))}
-          </select>
-          <button
-            onClick={triggerPredict}
-            disabled={predicting}
-            className="btn-primary min-w-[140px] gap-2"
-          >
-            <RefreshCcw className={`h-4 w-4 ${predicting ? 'animate-spin' : ''}`} />
-            <span>{predicting ? 'AI 矢量外推中' : '执行全域预测'}</span>
-          </button>
-        </div>
-      </div>
-
       {/* Metrics Row */}
       <motion.div 
         variants={container}
@@ -193,120 +159,97 @@ export default function Dashboard() {
         ))}
       </motion.div>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-        {/* Chart Column */}
-        <div className="min-w-0 space-y-8 lg:col-span-2">
-          <div className="console-card flex h-[520px] min-w-0 flex-col">
-            <div className="p-8 border-b border-slate-50 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-black uppercase tracking-widest text-slate-900">时空流量演化特征谱</h3>
-                <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase">当前监测基站: {selectedNode} · 动态 24 小时历史流速均值</p>
-              </div>
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 rounded-lg border border-slate-100">
-                <Gauge className="h-3.5 w-3.5 text-brand-500" />
-                <span className="text-[10px] font-black text-slate-600 uppercase">实时遥测链路正常</span>
-              </div>
+      {/* Header Info */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <div className="h-2 w-2 rounded-full bg-brand-500 animate-pulse" />
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">核心节点实时遥测中</span>
+          </div>
+          <p className="mt-2 text-slate-500 font-medium max-w-xl leading-relaxed">
+            集中实时采集成都核心路口流量，依托 <span className="text-slate-900 font-bold italic">LST-GCN</span> 时空建模实现流速推演。
+          </p>
+        </div>
+        <div className="flex items-center gap-3 bg-white p-2 rounded-2xl border border-slate-200/60 shadow-soft">
+          <select
+            className="h-11 pl-4 pr-10 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-700 focus:ring-2 focus:ring-brand-500/20 outline-none appearance-none cursor-pointer"
+            style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\' stroke-width=\'2\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.75rem center', backgroundSize: '1rem' }}
+            value={selectedNode}
+            onChange={(e) => setSelectedNode(e.target.value)}
+          >
+            {NODE_OPTIONS.map((n) => (
+              <option key={n} value={n}>分布式基站: {n}</option>
+            ))}
+          </select>
+          <button
+            onClick={triggerPredict}
+            disabled={predicting}
+            className="btn-primary min-w-[140px] gap-2"
+          >
+            <RefreshCcw className={`h-4 w-4 ${predicting ? 'animate-spin' : ''}`} />
+            <span>{predicting ? 'AI 矢量外推中' : '执行全域预测'}</span>
+          </button>
+        </div>
+      </div>
+
+
+      {/* Chart Column */}
+      <div className="min-w-0 space-y-8 lg:col-span-2">
+        <div className="console-card flex h-[520px] min-w-0 flex-col">
+          <div className="p-8 border-b border-slate-50 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-widest text-slate-900">时空流量演化特征谱</h3>
+              <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase">当前监测基站: {selectedNode} · 动态 24 小时历史流速均值</p>
             </div>
-            <div className="min-h-0 min-w-0 flex-1 p-6">
-              <div className="h-full min-h-[320px] min-w-0">
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={320}>
-                  <AreaChart data={history}>
-                  <defs>
-                    <linearGradient id="colorSpeed" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#f1f5f9" />
-                  <XAxis 
-                    dataKey="time" 
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
-                  />
-                  <YAxis 
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
-                    unit=" km"
-                  />
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', padding: '12px 16px' }}
-                    labelStyle={{ fontWeight: 800, color: '#1e293b', marginBottom: '4px', fontSize: '12px' }}
-                    itemStyle={{ fontSize: '12px', fontWeight: 600, color: '#10b981' }}
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="speed" 
-                    stroke="#10b981" 
-                    strokeWidth={4} 
-                    fillOpacity={1} 
-                    fill="url(#colorSpeed)" 
-                    animationDuration={2000}
-                  />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 rounded-lg border border-slate-100">
+              <Gauge className="h-3.5 w-3.5 text-brand-500" />
+              <span className="text-[10px] font-black text-slate-600 uppercase">实时遥测链路正常</span>
             </div>
           </div>
-        </div>
-
-        {/* Sidebar Column */}
-        <div className="space-y-8">
-          <div className="console-card flex flex-col h-[520px]">
-            <div className="p-8 border-b border-slate-50">
-              <h3 className="text-sm font-black uppercase tracking-widest text-slate-900">节点通讯同步矩阵</h3>
-              <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase">全域节点实时心跳列表</p>
+          <div className="min-h-0 min-w-0 flex-1 p-6">
+            <div className="h-full min-h-[320px] min-w-0">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={320}>
+                <AreaChart data={history}>
+                <defs>
+                  <linearGradient id="colorSpeed" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#f1f5f9" />
+                <XAxis 
+                  dataKey="time" 
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
+                />
+                <YAxis 
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
+                  unit=" km"
+                />
+                <Tooltip 
+                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', padding: '12px 16px' }}
+                  labelStyle={{ fontWeight: 800, color: '#1e293b', marginBottom: '4px', fontSize: '12px' }}
+                  itemStyle={{ fontSize: '12px', fontWeight: 600, color: '#10b981' }}
+                />
+                <Area 
+                  type="monotone" 
+                  dataKey="speed" 
+                  stroke="#10b981" 
+                  strokeWidth={4} 
+                  fillOpacity={1} 
+                  fill="url(#colorSpeed)" 
+                  animationDuration={2000}
+                />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {latest.map((row, idx) => {
-                const s = STATUS_LABEL[row.congestion_status] || STATUS_LABEL[0];
-                return (
-                  <motion.div 
-                    key={row.node_id}
-                    initial={{ opacity: 0, x: 10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.05 }}
-                    className="flex items-center justify-between p-4 rounded-2xl bg-slate-50/50 border border-slate-100/50 hover:bg-white hover:border-slate-200 transition-all group"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-[11px] font-black shadow-sm ring-1 ring-slate-100 group-hover:scale-110 transition-transform">
-                        {row.node_id}
-                      </div>
-                      <div className="text-xs font-black data-mono text-slate-600">
-                        {row.speed} <span className="text-[10px] text-slate-400 uppercase tracking-tighter">km/h</span>
-                      </div>
-                    </div>
-                    <div className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest" style={{ backgroundColor: s.bg, color: s.color }}>
-                      {s.label}
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
-
-            {predictions.length > 0 && (
-              <div className="p-6 bg-slate-900 text-white rounded-b-3xl">
-                <div className="flex items-center gap-2 mb-4">
-                  <RefreshCcw className="h-3 w-3 text-brand-400 animate-spin" />
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-400">AI 推演模型实时统计</span>
-                </div>
-                <div className="space-y-3">
-                  {predictions.slice(0, 2).map((p) => (
-                    <div key={p.node_id} className="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/5">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{p.node_id} 流速推演</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-black data-mono text-brand-400 font-bold">{p.predicted_speed}</span>
-                        <ArrowRight className="h-3 w-3 text-white/20" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
+
     </div>
   );
 }

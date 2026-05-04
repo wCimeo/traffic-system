@@ -520,14 +520,6 @@ export default function MapView() {
                 </button>
               </div>
 
-              <div className="absolute bottom-4 left-4 z-10 max-w-[17rem] rounded-2xl border border-white/70 bg-white/92 p-4 shadow-lg backdrop-blur-md">
-                <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">地图说明</p>
-                <h4 className="mb-1 text-sm font-black text-slate-900">成都核心路口实时态势</h4>
-                <p className="text-[11px] leading-relaxed text-slate-500">
-                  当前地图已回退到稳定的 2D 底图链路，用于优先保证高德地图正常显示和路口标记刷新。
-                </p>
-              </div>
-
               {mapStatus !== 'ready' && (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/70 backdrop-blur-sm">
                   <div className="rounded-3xl border border-slate-200 bg-white px-6 py-5 text-center shadow-lg">
