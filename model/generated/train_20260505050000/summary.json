@@ -1,0 +1,99 @@
+{
+  "version": "train_20260505050000",
+  "cutoffAt": "2026-05-05 05:00:00",
+  "bucketMinutes": 5,
+  "rawRowCount": 5359,
+  "alignedRowCount": 26928,
+  "bucketCount": 2448,
+  "startBucket": "2026-04-26 17:00:00",
+  "endBucket": "2026-05-05 04:55:00",
+  "rawMinTime": "2026-04-26 17:00:10",
+  "rawMaxTime": "2026-05-05 04:59:15",
+  "observedRatio": 0.154932,
+  "perNode": {
+    "A1": {
+      "rawRows": 506,
+      "alignedRows": 2448,
+      "observedRows": 392,
+      "missingBeforeFill": 2056,
+      "missingRateBeforeFill": 0.839869
+    },
+    "B2": {
+      "rawRows": 507,
+      "alignedRows": 2448,
+      "observedRows": 392,
+      "missingBeforeFill": 2056,
+      "missingRateBeforeFill": 0.839869
+    },
+    "C3": {
+      "rawRows": 508,
+      "alignedRows": 2448,
+      "observedRows": 394,
+      "missingBeforeFill": 2054,
+      "missingRateBeforeFill": 0.839052
+    },
+    "D4": {
+      "rawRows": 506,
+      "alignedRows": 2448,
+      "observedRows": 392,
+      "missingBeforeFill": 2056,
+      "missingRateBeforeFill": 0.839869
+    },
+    "E5": {
+      "rawRows": 506,
+      "alignedRows": 2448,
+      "observedRows": 392,
+      "missingBeforeFill": 2056,
+      "missingRateBeforeFill": 0.839869
+    },
+    "F6": {
+      "rawRows": 508,
+      "alignedRows": 2448,
+      "observedRows": 394,
+      "missingBeforeFill": 2054,
+      "missingRateBeforeFill": 0.839052
+    },
+    "G7": {
+      "rawRows": 505,
+      "alignedRows": 2448,
+      "observedRows": 391,
+      "missingBeforeFill": 2057,
+      "missingRateBeforeFill": 0.840278
+    },
+    "H8": {
+      "rawRows": 505,
+      "alignedRows": 2448,
+      "observedRows": 392,
+      "missingBeforeFill": 2056,
+      "missingRateBeforeFill": 0.839869
+    },
+    "I9": {
+      "rawRows": 505,
+      "alignedRows": 2448,
+      "observedRows": 392,
+      "missingBeforeFill": 2056,
+      "missingRateBeforeFill": 0.839869
+    },
+    "J10": {
+      "rawRows": 507,
+      "alignedRows": 2448,
+      "observedRows": 393,
+      "missingBeforeFill": 2055,
+      "missingRateBeforeFill": 0.839461
+    },
+    "K11": {
+      "rawRows": 296,
+      "alignedRows": 2448,
+      "observedRows": 248,
+      "missingBeforeFill": 2200,
+      "missingRateBeforeFill": 0.898693
+    }
+  },
+  "fillMethodCounts": {
+    "real": 4172,
+    "interpolate": 21814,
+    "spatial": 942,
+    "carry_forward": 0,
+    "carry_backward": 0
+  }
+}
