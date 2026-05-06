@@ -1,0 +1,32 @@
+{
+  "15": {
+    "mae": 3.177,
+    "rmse": 4.618,
+    "mape": 8.7262
+  },
+  "30": {
+    "mae": 3.3691,
+    "rmse": 4.8239,
+    "mape": 9.1368
+  },
+  "45": {
+    "mae": 3.8223,
+    "rmse": 5.1951,
+    "mape": 10.4247
+  },
+  "60": {
+    "mae": 3.6398,
+    "rmse": 5.1076,
+    "mape": 10.0174
+  },
+  "model_selection": {
+    "strategy": "direct_multi_horizon_supervision",
+    "reason": "avoid cumulative error from rolling single-step prediction on 30/45/60 minute horizons"
+  },
+  "dataset": {
+    "train_version": "train_20260505050000",
+    "aligned_rows": 26928,
+    "bucket_minutes": 5,
+    "window_size": 12
+  }
+}
