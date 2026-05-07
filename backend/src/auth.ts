@@ -11,6 +11,8 @@ const CAPTCHA_TTL_SECONDS = 5 * 60;
 const SMS_TTL_SECONDS = 10 * 60;
 const SMS_RATE_LIMIT_SECONDS = 60;
 const CAPTCHA_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz';
+const AUTH_DEV_LOG_CODES = String(process.env.AUTH_DEV_LOG_CODES || '').toLowerCase() === 'true';
+const CAPTCHA_RATE_SECONDS = Math.max(1, Number(process.env.AUTH_CAPTCHA_RATE_SECONDS || 2));
 
 type UserRow = {
   id: number;
@@ -273,19 +275,14 @@ function serializeUser(user: UserRow) {
 }
 
 async function validateCaptcha(captchaId: string, captcha: string) {
-  console.log('  [validateCaptcha] captchaId:', captchaId, 'captcha:', captcha);
   if (!captchaId || !captcha) {
-    console.log('  [validateCaptcha] 失败: captchaId 或 captcha 为空');
     return false;
   }
   const expected = await cacheGet(`captcha:${captchaId}`);
-  console.log('  [validateCaptcha] 从缓存获取的验证码:', expected);
   if (!expected) {
-    console.log('  [validateCaptcha] 失败: 缓存中没有找到验证码');
     return false;
   }
   const ok = normalizeCaptcha(expected) === normalizeCaptcha(captcha);
-  console.log('  [validateCaptcha] 比对结果:', ok, 'expected:', expected, 'input:', captcha);
   if (ok) await cacheDelete(`captcha:${captchaId}`);
   return ok;
 }
@@ -353,23 +350,30 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
   next();
 }
 
-router.get('/captcha', async (_req: Request, res: Response) => {
+router.get('/captcha', async (req: Request, res: Response) => {
+  const ip = getClientIp(req);
+  const rateKey = `captcha:rate:${ip}`;
+  if (await cacheGet(rateKey)) {
+    return res.status(429).json({ success: false, error: '刷新验证码过于频繁，请稍后再试' });
+  }
+
   const captchaId = crypto.randomUUID();
   const code = randomCode(5, CAPTCHA_CHARS);
   await cacheSet(`captcha:${captchaId}`, code, CAPTCHA_TTL_SECONDS);
+  await cacheSet(rateKey, '1', CAPTCHA_RATE_SECONDS);
+  if (AUTH_DEV_LOG_CODES) {
+    console.log(`[DEV CAPTCHA] id=${captchaId} code=${code} ttl=${CAPTCHA_TTL_SECONDS}s ip=${ip}`);
+  }
   res.json({ success: true, captchaId, svg: createCaptchaSvg(code), expiresIn: CAPTCHA_TTL_SECONDS });
 });
 
 router.post('/sms/send', async (req: Request, res: Response) => {
-  console.log('\n========== 收到短信发送请求 ==========');
-  console.log('请求体:', req.body);
   const { phone, captchaId, captcha } = req.body;
   const normalizedPhone = normalizePhone(phone);
   if (!/^1\d{10}$/.test(normalizedPhone)) {
     return res.status(400).json({ success: false, error: '请输入有效的手机号' });
   }
   if (!(await validateCaptcha(captchaId, captcha))) {
-    console.log('❌ 图形验证码验证失败，captchaId:', captchaId, 'captcha:', captcha);
     return res.status(400).json({ success: false, error: '图形验证码错误或已过期' });
   }
 
@@ -382,7 +386,9 @@ router.post('/sms/send', async (req: Request, res: Response) => {
   const code = randomDigits(6);
   await cacheSet(`sms:${normalizedPhone}`, code, SMS_TTL_SECONDS);
   await cacheSet(rateKey, '1', SMS_RATE_LIMIT_SECONDS);
-  console.log(`\n🎯 [模拟短信] 手机号 ${normalizedPhone} 的验证码是：${code}，10分钟内有效\n`);
+  if (AUTH_DEV_LOG_CODES) {
+    console.log(`[DEV SMS] phone=${normalizedPhone} code=${code} ttl=${SMS_TTL_SECONDS}s ip=${ip}`);
+  }
 
   res.json({ success: true, message: '验证码已发送（开发模式请查看后端控制台）' });
 });
@@ -402,8 +408,10 @@ router.post('/sms/send-profile', requireAuth, async (req: AuthRequest, res: Resp
   const code = randomDigits(6);
   await cacheSet(`sms:${phone}`, code, SMS_TTL_SECONDS);
   await cacheSet(rateKey, '1', SMS_RATE_LIMIT_SECONDS);
-  console.log(`\n🎯 [模拟短信] 个人资料绑定手机号 ${phone} 的验证码是：${code}\n`);
-  res.json({ success: true, message: '验证码已发送（开发模式请查看后端控制台）', devCode: code });
+  if (AUTH_DEV_LOG_CODES) {
+    console.log(`[DEV SMS] profile phone=${phone} code=${code} ttl=${SMS_TTL_SECONDS}s ip=${ip}`);
+  }
+  res.json({ success: true, message: '验证码已发送（开发模式请查看后端控制台）' });
 });
 
 router.post('/phone-login', async (req: Request, res: Response) => {
@@ -503,7 +511,6 @@ router.post('/register', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: '请输入有效的手机号' });
   }
   if (!(await validateCaptcha(captchaId, captcha))) {
-    console.log('❌ 图形验证码验证失败，captchaId:', captchaId, 'captcha:', captcha);
     return res.status(400).json({ success: false, error: '图形验证码错误或已过期' });
   }
 
@@ -555,7 +562,6 @@ router.post('/login', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: '账号和密码不能为空' });
   }
   if (!(await validateCaptcha(captchaId, captcha))) {
-    console.log('❌ 图形验证码验证失败，captchaId:', captchaId, 'captcha:', captcha);
     return res.status(400).json({ success: false, error: '图形验证码错误或已过期' });
   }
 
