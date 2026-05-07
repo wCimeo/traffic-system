@@ -31,7 +31,11 @@ export const fetchPredictionOutlook = (nodeId: string) =>
 export const fetchDashboardChart = (nodeId: string, date: string, horizon = 15) =>
   api.get('/api/dashboard/chart', { params: { node_id: nodeId, date, horizon } });
 
-export const fetchRouteOutlook = (nodeId: string, horizons: number[] = [30, 45, 60]) =>
-  api.get('/api/route/outlook', { params: { node_id: nodeId, horizons: horizons.join(',') } });
+export const fetchRouteOutlook = (nodeIds: string[] | string, horizons: number[] = [30, 45, 60]) =>
+  api.get('/api/route/outlook', {
+    params: Array.isArray(nodeIds)
+      ? { node_ids: nodeIds.join(','), horizons: horizons.join(',') }
+      : { node_id: nodeIds, horizons: horizons.join(',') },
+  });
 
 export default api;

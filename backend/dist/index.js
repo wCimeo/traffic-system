@@ -130,6 +130,70 @@ function buildRecommendation(predictedSpeed) {
     }
     return { recommendation: 'caution', level: 'normal' };
 }
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+function buildRouteAdvice(currentSpeed, predictedSpeed, horizon) {
+    const delta = currentSpeed === null ? null : Number((predictedSpeed - currentSpeed).toFixed(2));
+    const decline = delta === null ? 0 : Math.max(0, -delta);
+    const lowSpeedPenalty = predictedSpeed < 25 ? 42 : predictedSpeed < 35 ? 22 : predictedSpeed < 40 ? 10 : 0;
+    const declinePenalty = decline >= 12 ? 28 : decline >= 8 ? 18 : decline >= 5 ? 10 : 0;
+    const score = Math.round(clamp(100 - lowSpeedPenalty - declinePenalty, 0, 100));
+    let level = 'good';
+    let recommendation = '建议通行';
+    if (score < 55 || predictedSpeed < 25) {
+        level = 'bad';
+        recommendation = '建议绕行';
+    }
+    else if (score < 76 || predictedSpeed < 35 || decline >= 8) {
+        level = 'normal';
+        recommendation = '谨慎通行';
+    }
+    const reasonParts = [];
+    reasonParts.push(`${horizon}分钟后预测速度约 ${predictedSpeed.toFixed(1)} km/h`);
+    if (currentSpeed !== null) {
+        const direction = delta >= 0 ? '上升' : '下降';
+        reasonParts.push(`较当前${direction} ${Math.abs(delta).toFixed(1)} km/h`);
+    }
+    if (predictedSpeed < 25) {
+        reasonParts.push('预测速度低于拥堵阈值');
+    }
+    else if (predictedSpeed < 35) {
+        reasonParts.push('未来通行效率偏低');
+    }
+    else if (decline >= 8) {
+        reasonParts.push('速度下滑明显');
+    }
+    else {
+        reasonParts.push('未来速度保持在可接受区间');
+    }
+    return {
+        recommendation,
+        level,
+        score,
+        speed_delta: delta,
+        reason: reasonParts.join('，'),
+    };
+}
+async function getLatestTrafficMap(nodeIds = NODE_IDS) {
+    const [rows] = await db_1.default.query(`SELECT t.node_id, t.speed, t.congestion_status, t.collected_at
+     FROM ${TRAFFIC_TABLE} t
+     INNER JOIN (
+       SELECT node_id, MAX(collected_at) as max_time
+       FROM ${TRAFFIC_TABLE}
+       GROUP BY node_id
+     ) latest ON t.node_id = latest.node_id AND t.collected_at = latest.max_time
+     WHERE t.node_id IN (?)`, [nodeIds]);
+    return new Map((rows || []).map((row) => [row.node_id, row]));
+}
+function parseNodeList(rawValue, fallback = []) {
+    const rawText = Array.isArray(rawValue) ? rawValue.join(',') : String(rawValue || '');
+    const parsed = rawText
+        .split(',')
+        .map((value) => String(value).trim())
+        .filter((value) => NODE_IDS.includes(value));
+    return parsed.length ? Array.from(new Set(parsed)) : fallback;
+}
 async function ensurePredictionsTableMigration() {
     const [columns] = await db_1.default.query(`SELECT COLUMN_NAME AS name
      FROM INFORMATION_SCHEMA.COLUMNS
@@ -527,17 +591,27 @@ app.get('/api/route/decision', async (req, res) => {
             return res.status(400).json({ success: false, error: 'invalid node_id' });
         }
         const result = await inferPredictionSnapshot();
+        const latestMap = await getLatestTrafficMap([nodeId]);
+        const current = latestMap.get(nodeId);
+        const currentSpeed = current ? Number(current.speed) : null;
         const target = result.snapshots.find((item) => item.horizon_minutes === safeHorizon);
         const predictedSpeed = Number(target?.predictions?.[nodeId] ?? 0);
-        const advice = buildRecommendation(predictedSpeed);
+        const advice = buildRouteAdvice(currentSpeed, predictedSpeed, safeHorizon);
         return res.json({
             success: true,
             data: {
                 node_id: nodeId,
                 horizon: safeHorizon,
+                horizon_minutes: safeHorizon,
+                current_speed: currentSpeed,
+                current_status: current?.congestion_status ?? null,
+                current_collected_at: current?.collected_at ? new Date(current.collected_at).toISOString() : null,
                 predicted_speed: predictedSpeed,
+                speed_delta: advice.speed_delta,
+                score: advice.score,
                 recommendation: advice.recommendation,
                 level: advice.level,
+                reason: advice.reason,
                 source_table: TRAFFIC_SOURCE.readTable,
                 generated_at: result.generatedAt.toISOString(),
                 target_at: target?.target_at || null,
@@ -550,34 +624,51 @@ app.get('/api/route/decision', async (req, res) => {
     }
 });
 app.get('/api/route/outlook', async (req, res) => {
-    const nodeId = String(req.query.node_id || '').trim();
-    if (!nodeId) {
-        return res.status(400).json({ success: false, error: 'node_id is required' });
-    }
-    if (!NODE_IDS.includes(nodeId)) {
-        return res.status(400).json({ success: false, error: 'invalid node_id' });
+    const nodeIds = parseNodeList(req.query.node_ids, parseNodeList(req.query.node_id, []));
+    if (nodeIds.length === 0) {
+        return res.status(400).json({ success: false, error: 'node_id or node_ids is required' });
     }
     const horizons = parseHorizonList(req.query.horizons, [30, 45, 60]);
     try {
         const result = await runPredictionSnapshot();
-        const items = result.snapshots
-            .filter((item) => horizons.includes(item.horizon_minutes))
-            .map((item) => {
-            const predictedSpeed = Number(item.predictions?.[nodeId] ?? 0);
-            const advice = buildRecommendation(predictedSpeed);
-            return {
-                node_id: nodeId,
-                horizon_minutes: item.horizon_minutes,
-                predicted_speed: predictedSpeed,
-                recommendation: advice.recommendation,
-                level: advice.level,
+        const latestMap = await getLatestTrafficMap(nodeIds);
+        const items = [];
+        for (const nodeId of nodeIds) {
+            const current = latestMap.get(nodeId);
+            const currentSpeed = current ? Number(current.speed) : null;
+            for (const item of result.snapshots.filter((snapshot) => horizons.includes(snapshot.horizon_minutes))) {
+                const predictedSpeed = Number(item.predictions?.[nodeId] ?? 0);
+                const advice = buildRouteAdvice(currentSpeed, predictedSpeed, item.horizon_minutes);
+                items.push({
+                    node_id: nodeId,
+                    horizon_minutes: item.horizon_minutes,
+                    current_speed: currentSpeed,
+                    current_status: current?.congestion_status ?? null,
+                    current_collected_at: current?.collected_at ? new Date(current.collected_at).toISOString() : null,
+                    predicted_speed: predictedSpeed,
+                    speed_delta: advice.speed_delta,
+                    score: advice.score,
+                    recommendation: advice.recommendation,
+                    level: advice.level,
+                    reason: advice.reason,
+                    generated_at: result.generatedAt.toISOString(),
+                    target_at: item.target_at,
+                    lead_minutes: item.horizon_minutes,
+                    source_table: TRAFFIC_SOURCE.readTable,
+                });
+            }
+        }
+        items.sort((a, b) => b.score - a.score || b.predicted_speed - a.predicted_speed);
+        res.json({
+            success: true,
+            data: items,
+            meta: {
+                node_ids: nodeIds,
+                horizons,
                 generated_at: result.generatedAt.toISOString(),
-                target_at: item.target_at,
-                lead_minutes: item.horizon_minutes,
                 source_table: TRAFFIC_SOURCE.readTable,
-            };
+            },
         });
-        res.json({ success: true, data: items });
     }
     catch (err) {
         res.status(500).json({ success: false, error: String(err) });
@@ -757,7 +848,7 @@ app.get('/api/dashboard/chart', async (req, res) => {
 const PORT = process.env.PORT || 3001;
 // 姣?鍒嗛挓鑷姩瑙﹀彂涓€娆￠娴?
 node_cron_1.default.schedule('*/5 * * * *', async () => {
-    console.log(`[${new Date().toLocaleString('zh')}] 瀹氭椂棰勬祴瑙﹀彂...`);
+    console.log(`[${new Date().toLocaleString('zh')}] Scheduled prediction triggered...`);
     try {
         const result = await runPredictionSnapshot();
         console.log(`scheduled prediction complete`, {
@@ -776,10 +867,10 @@ node_cron_1.default.schedule('*/5 * * * *', async () => {
     await ensurePredictionsTableMigration();
     await ensureIncidentsTableMigration();
     app.listen(PORT, () => {
-        console.log(`鍚庣鏈嶅姟杩愯鍦?http://localhost:${PORT}`);
+        console.log(`Backend server running at http://localhost:${PORT}`);
     });
 })
     .catch((err) => {
-    console.error('鐢ㄦ埛琛ㄨ縼绉诲け璐ワ紝鍚庣鍚姩涓:', err);
+    console.error('User table migration failed, server startup stopped:', err);
     process.exit(1);
 });

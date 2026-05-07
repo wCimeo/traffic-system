@@ -14,6 +14,6 @@ const redis = new ioredis_1.default({
         return Math.min(times * 200, 1000);
     },
 });
-redis.on('connect', () => console.log('Redis连接成功'));
-redis.on('error', (err) => console.warn('Redis连接失败，降级为直查MySQL:', err.message));
+redis.on('connect', () => console.log('Redis connected'));
+redis.on('error', (err) => console.warn('Redis connection failed, fallback to MySQL:', err.message));
 exports.default = redis;
