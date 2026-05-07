@@ -125,6 +125,21 @@ def ensure_mock_table():
     try:
         with conn.cursor() as cur:
             cur.execute(sql)
+            cur.execute(f"""
+                DELETE t1 FROM `{MOCK_TABLE}` t1
+                INNER JOIN `{MOCK_TABLE}` t2
+                  ON t1.node_id = t2.node_id
+                 AND t1.collected_at = t2.collected_at
+                 AND t1.id > t2.id
+            """)
+            cur.execute(f"""
+                CREATE UNIQUE INDEX uniq_mock_node_time
+                ON `{MOCK_TABLE}` (node_id, collected_at)
+            """)
+        conn.commit()
+    except pymysql.err.OperationalError as error:
+        if getattr(error, 'args', [None])[0] != 1061:
+            raise
         conn.commit()
     finally:
         conn.close()
@@ -334,6 +349,10 @@ def save_records(records: list):
       (node_id, collected_at, speed, congestion_status, road_count)
     VALUES
       (%(node_id)s, %(collected_at)s, %(speed)s, %(congestion_status)s, %(road_count)s)
+    ON DUPLICATE KEY UPDATE
+      speed = VALUES(speed),
+      congestion_status = VALUES(congestion_status),
+      road_count = VALUES(road_count)
     """
     conn = connect_db()
     try:

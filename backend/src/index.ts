@@ -308,6 +308,17 @@ async function ensureTrafficMockTableMigration() {
       INDEX idx_node_time (node_id, collected_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
+  await pool.query(`
+    DELETE t1 FROM \`${TRAFFIC_SOURCE.mockTable}\` t1
+    INNER JOIN \`${TRAFFIC_SOURCE.mockTable}\` t2
+      ON t1.node_id = t2.node_id
+     AND t1.collected_at = t2.collected_at
+     AND t1.id > t2.id
+  `);
+  await pool.query(`
+    CREATE UNIQUE INDEX uniq_mock_node_time
+    ON \`${TRAFFIC_SOURCE.mockTable}\` (node_id, collected_at)
+  `).catch(() => null);
 }
 
 app.get('/api/health', (req, res) => {
@@ -373,7 +384,7 @@ app.get('/api/traffic/history', async (req, res) => {
 // 瑙﹀彂棰勬祴锛氬彇鏈€杩?2鏉℃暟鎹杺缁橣lask锛岀粨鏋滃啓鍥瀙redictions琛?
 app.post('/api/predict/trigger', async (req, res) => {
   try {
-    const result = await inferPredictionSnapshot();
+    const result = await runPredictionSnapshot();
 
     res.json({
       success: true,
@@ -769,15 +780,9 @@ app.get('/api/report/export', async (req, res) => {
 app.get('/api/report/predict-export', async (req, res) => {
   const { node_id } = req.query;
   try {
-    const window = await buildModelWindow(NODE_IDS);
-    const flaskResp = await axios.post(`${AI_SERVICE_URL}/predict/multistep`, {
-      window, steps: 2
-    });
-    const flaskData: any = flaskResp.data;
-    if (!flaskData.success) throw new Error(flaskData.error);
-
-    const pred15 = flaskData.predictions[0];  // 15鍒嗛挓鍚?
-    const pred30 = flaskData.predictions[1];  // 30鍒嗛挓鍚?
+    const predictionResult = await inferPredictionSnapshot();
+    const pred15 = predictionResult.snapshots.find((item) => item.horizon_minutes === 15)?.predictions || {};
+    const pred30 = predictionResult.snapshots.find((item) => item.horizon_minutes === 30)?.predictions || {};
 
     // 3. 鍙栨渶鏂伴噰闆嗘暟鎹?
     const [current]: any = await pool.query(
@@ -800,9 +805,7 @@ app.get('/api/report/predict-export', async (req, res) => {
       return 'congested';
     };
 
-    const now = new Date();
-    const t15 = new Date(now.getTime() + 15 * 60000).toLocaleString('zh');
-    const t30 = new Date(now.getTime() + 30 * 60000).toLocaleString('zh');
+    const now = predictionResult.generatedAt;
 
     // 4. 杩囨护鑺傜偣
     const targetNodes = (node_id && node_id !== 'all')
