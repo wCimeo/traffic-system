@@ -171,4 +171,6 @@ def health():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001, debug=False)
+    port = int(os.getenv('AI_SERVICE_PORT', '5001'))
+    host = os.getenv('AI_SERVICE_HOST', '0.0.0.0')
+    app.run(host=host, port=port, debug=False)

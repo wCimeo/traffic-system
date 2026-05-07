@@ -1,0 +1,4 @@
+◇ injected env (0) from .env // tip: ⌘ override existing { override: true }
+◇ injected env (0) from .env // tip: ⌘ enable debugging { debug: true }
+Redis连接成功
+鍚庣鏈嶅姟杩愯鍦?http://localhost:3011

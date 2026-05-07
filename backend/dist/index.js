@@ -112,6 +112,117 @@ NODES_META.push({ id: 'K11', name: 'Node K11' });
 const NODE_IDS = NODES_META.map((node) => node.id);
 const TRAFFIC_TABLE = (0, trafficSource_1.getTrafficReadTableSql)();
 const TRAFFIC_SOURCE = (0, trafficSource_1.getTrafficSourceConfig)();
+const DEFAULT_HORIZONS = [15, 30, 45, 60];
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:5001';
+function parseHorizonList(rawValue, fallback = DEFAULT_HORIZONS) {
+    const rawText = Array.isArray(rawValue) ? rawValue.join(',') : String(rawValue || '');
+    const parsed = rawText
+        .split(',')
+        .map((value) => Number(String(value).trim()))
+        .filter((value) => DEFAULT_HORIZONS.includes(value));
+    return parsed.length ? Array.from(new Set(parsed)).sort((a, b) => a - b) : [...fallback];
+}
+function buildRecommendation(predictedSpeed) {
+    if (predictedSpeed >= 40) {
+        return { recommendation: 'recommended', level: 'good' };
+    }
+    if (predictedSpeed < 25) {
+        return { recommendation: 'reroute', level: 'bad' };
+    }
+    return { recommendation: 'caution', level: 'normal' };
+}
+async function ensurePredictionsTableMigration() {
+    const [columns] = await db_1.default.query(`SELECT COLUMN_NAME AS name
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'predictions'`);
+    const columnSet = new Set((columns || []).map((row) => row.name));
+    const addColumnIfMissing = async (name, definition) => {
+        if (!columnSet.has(name)) {
+            await db_1.default.query(`ALTER TABLE predictions ADD COLUMN ${name} ${definition}`);
+            columnSet.add(name);
+        }
+    };
+    await addColumnIfMissing('horizon_minutes', 'INT NOT NULL DEFAULT 15');
+    await addColumnIfMissing('target_at', 'DATETIME NULL');
+    await addColumnIfMissing('source_table', `VARCHAR(64) NULL DEFAULT '${TRAFFIC_SOURCE.readTable}'`);
+    await addColumnIfMissing('model_bucket_minutes', `TINYINT NOT NULL DEFAULT ${(0, trafficWindow_1.getModelBucketMinutes)()}`);
+    await db_1.default.query(`
+    CREATE INDEX idx_prediction_horizon_time
+    ON predictions (horizon_minutes, predicted_at, target_at, node_id)
+  `).catch(() => null);
+}
+function normalizePredictionPayload(flaskData) {
+    const horizons = flaskData?.multi_horizon_predictions;
+    if (Array.isArray(horizons) && horizons.length > 0) {
+        return horizons
+            .filter((item) => item && typeof item.minutes === 'number' && item.predictions)
+            .map((item) => ({
+            minutes: Number(item.minutes),
+            predictions: item.predictions,
+        }));
+    }
+    return [{
+            minutes: Number(flaskData?.primary_horizon_minutes || 15),
+            predictions: (flaskData?.predictions || {}),
+        }];
+}
+async function persistPredictionSnapshot(flaskData, generatedAt) {
+    const normalized = normalizePredictionPayload(flaskData);
+    const insertValues = [];
+    for (const horizon of normalized) {
+        const targetAt = new Date(generatedAt.getTime() + horizon.minutes * 60 * 1000);
+        for (const nodeId of NODE_IDS) {
+            insertValues.push([
+                nodeId,
+                Number(horizon.predictions?.[nodeId] ?? 0),
+                generatedAt,
+                horizon.minutes,
+                targetAt,
+                TRAFFIC_SOURCE.readTable,
+                (0, trafficWindow_1.getModelBucketMinutes)(),
+            ]);
+        }
+    }
+    if (insertValues.length > 0) {
+        await db_1.default.query(`INSERT INTO predictions
+        (node_id, predicted_speed, predicted_at, horizon_minutes, target_at, source_table, model_bucket_minutes)
+       VALUES ?`, [insertValues]);
+    }
+    return normalized.map((item) => ({
+        horizon_minutes: item.minutes,
+        target_at: new Date(generatedAt.getTime() + item.minutes * 60 * 1000).toISOString(),
+        predictions: item.predictions,
+    }));
+}
+async function inferPredictionSnapshot() {
+    const window = await (0, trafficWindow_1.buildModelWindow)(NODE_IDS);
+    const flaskResp = await axios_1.default.post(`${AI_SERVICE_URL}/predict`, { window });
+    const flaskData = flaskResp.data;
+    if (!flaskData.success) {
+        throw new Error(flaskData.error || 'predict failed');
+    }
+    const generatedAt = new Date();
+    const snapshots = normalizePredictionPayload(flaskData).map((item) => ({
+        horizon_minutes: item.minutes,
+        target_at: new Date(generatedAt.getTime() + item.minutes * 60 * 1000).toISOString(),
+        predictions: item.predictions,
+    }));
+    return {
+        generatedAt,
+        snapshots,
+        primaryPredictions: snapshots.find((item) => item.horizon_minutes === 15)?.predictions || snapshots[0]?.predictions || {},
+    };
+}
+async function runPredictionSnapshot() {
+    const result = await inferPredictionSnapshot();
+    await persistPredictionSnapshot({
+        multi_horizon_predictions: result.snapshots.map((item) => ({
+            minutes: item.horizon_minutes,
+            predictions: item.predictions,
+        })),
+    }, result.generatedAt);
+    return result;
+}
 async function ensureTrafficMockTableMigration() {
     await db_1.default.query(`
     CREATE TABLE IF NOT EXISTS \`${TRAFFIC_SOURCE.mockTable}\` (
@@ -133,6 +244,7 @@ app.get('/api/health', (req, res) => {
         traffic_table: TRAFFIC_SOURCE.readTable,
         model_bucket_minutes: (0, trafficWindow_1.getModelBucketMinutes)(),
         model_window_size: (0, trafficWindow_1.getModelWindowSize)(),
+        ai_service_url: AI_SERVICE_URL,
     });
 });
 // 鑾峰彇鏈€鏂颁竴杞悇璺彛璺喌
@@ -180,21 +292,15 @@ app.get('/api/traffic/history', async (req, res) => {
 // 瑙﹀彂棰勬祴锛氬彇鏈€杩?2鏉℃暟鎹杺缁橣lask锛岀粨鏋滃啓鍥瀙redictions琛?
 app.post('/api/predict/trigger', async (req, res) => {
     try {
-        const window = await (0, trafficWindow_1.buildModelWindow)(NODE_IDS);
-        const flaskResp = await axios_1.default.post('http://localhost:5001/predict', { window });
-        const flaskData = flaskResp.data;
-        if (!flaskData.success) {
-            return res.status(500).json({ success: false, error: flaskData.error });
-        }
-        // 4. 鎶婇娴嬬粨鏋滃啓鍏redictions琛?
-        const predictions = flaskData.predictions;
-        const now = new Date();
-        const insertValues = NODE_IDS.map(nid => [nid, predictions[nid], now]);
-        await db_1.default.query(`INSERT INTO predictions (node_id, predicted_speed, predicted_at)
-       VALUES ?`, [insertValues]);
+        const result = await inferPredictionSnapshot();
         res.json({
             success: true,
-            predictions,
+            predictions: result.primaryPredictions,
+            generated_at: result.generatedAt.toISOString(),
+            horizons: result.snapshots.map((item) => ({
+                horizon_minutes: item.horizon_minutes,
+                target_at: item.target_at,
+            })),
             source_table: TRAFFIC_SOURCE.readTable,
             bucket_minutes: (0, trafficWindow_1.getModelBucketMinutes)(),
         });
@@ -205,22 +311,81 @@ app.post('/api/predict/trigger', async (req, res) => {
 });
 // 鑾峰彇鏈€鏂伴娴嬬粨鏋?
 app.get('/api/predict/latest', async (req, res) => {
+    const horizon = Number(req.query.horizon || 15);
+    const nodeId = String(req.query.node_id || '').trim();
     try {
-        const [rows] = await db_1.default.query(`SELECT p.node_id, p.predicted_speed, p.predicted_at
+        const conditions = ['p.horizon_minutes = ?'];
+        const params = [horizon];
+        if (nodeId) {
+            conditions.push('p.node_id = ?');
+            params.push(nodeId);
+        }
+        const [rows] = await db_1.default.query(`SELECT p.node_id, p.predicted_speed, p.predicted_at, p.horizon_minutes, p.target_at, p.source_table, p.model_bucket_minutes
        FROM predictions p
        INNER JOIN (
-         SELECT node_id, MAX(predicted_at) as max_time
-         FROM predictions GROUP BY node_id
-       ) latest ON p.node_id = latest.node_id AND p.predicted_at = latest.max_time
-       ORDER BY p.node_id`);
-        res.json({ success: true, data: rows });
+         SELECT MAX(predicted_at) as max_time
+         FROM predictions
+         WHERE horizon_minutes = ? AND target_at IS NOT NULL
+       ) latest ON p.predicted_at = latest.max_time
+       WHERE ${conditions.join(' AND ')} AND p.target_at IS NOT NULL
+       ORDER BY p.node_id`, [horizon, ...params]);
+        res.json({
+            success: true,
+            data: rows,
+            meta: {
+                horizon_minutes: horizon,
+                generated_at: rows[0]?.predicted_at || null,
+                source_table: rows[0]?.source_table || TRAFFIC_SOURCE.readTable,
+            },
+        });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: String(err) });
+    }
+});
+app.get('/api/predict/outlook', async (req, res) => {
+    const nodeId = String(req.query.node_id || '').trim();
+    if (!nodeId) {
+        return res.status(400).json({ success: false, error: 'node_id is required' });
+    }
+    if (!NODE_IDS.includes(nodeId)) {
+        return res.status(400).json({ success: false, error: 'invalid node_id' });
+    }
+    try {
+        const [rows] = await db_1.default.query(`SELECT p.node_id, p.predicted_speed, p.predicted_at, p.horizon_minutes, p.target_at, p.source_table, p.model_bucket_minutes
+       FROM predictions p
+       INNER JOIN (
+         SELECT horizon_minutes, MAX(predicted_at) AS max_time
+         FROM predictions
+         WHERE target_at IS NOT NULL
+         GROUP BY horizon_minutes
+       ) latest ON p.horizon_minutes = latest.horizon_minutes AND p.predicted_at = latest.max_time
+       WHERE p.node_id = ? AND p.target_at IS NOT NULL
+       ORDER BY p.horizon_minutes ASC`, [nodeId]);
+        const data = rows.map((row) => ({
+            node_id: row.node_id,
+            horizon_minutes: row.horizon_minutes,
+            predicted_speed: Number(row.predicted_speed),
+            generated_at: new Date(row.predicted_at).toISOString(),
+            target_at: row.target_at ? new Date(row.target_at).toISOString() : null,
+            lead_minutes: row.horizon_minutes,
+            source_table: row.source_table || TRAFFIC_SOURCE.readTable,
+        }));
+        res.json({ success: true, data });
     }
     catch (err) {
         res.status(500).json({ success: false, error: String(err) });
     }
 });
 app.get('/api/nodes', (req, res) => {
-    res.json({ success: true, data: NODES_META });
+    res.json({
+        success: true,
+        data: NODES_META,
+        meta: {
+            node_ids: NODE_IDS,
+            count: NODE_IDS.length,
+        },
+    });
 });
 // 浜嬩欢绠＄悊
 app.get('/api/incidents', async (req, res) => {
@@ -362,39 +527,61 @@ app.get('/api/route/decision', async (req, res) => {
         if (!NODE_IDS.includes(nodeId)) {
             return res.status(400).json({ success: false, error: 'invalid node_id' });
         }
-        const window = await (0, trafficWindow_1.buildModelWindow)(NODE_IDS);
-        const steps = safeHorizon / 15;
-        const flaskResp = await axios_1.default.post('http://localhost:5001/predict/multistep', { window, steps: 4 });
-        const flaskData = flaskResp.data;
-        if (!flaskData.success)
-            throw new Error(flaskData.error || 'predict failed');
-        const targetStepPred = flaskData.predictions[steps - 1] || {};
-        const predictedSpeed = Number(targetStepPred[nodeId] ?? 0);
-        let recommendation = '寤鸿璋ㄦ厧閫氳';
-        let level = 'normal';
-        if (predictedSpeed >= 40) {
-            recommendation = '寤鸿閫氳';
-            level = 'good';
-        }
-        else if (predictedSpeed < 25) {
-            recommendation = '寤鸿缁曡';
-            level = 'bad';
-        }
+        const result = await inferPredictionSnapshot();
+        const target = result.snapshots.find((item) => item.horizon_minutes === safeHorizon);
+        const predictedSpeed = Number(target?.predictions?.[nodeId] ?? 0);
+        const advice = buildRecommendation(predictedSpeed);
         return res.json({
             success: true,
             data: {
                 node_id: nodeId,
                 horizon: safeHorizon,
                 predicted_speed: predictedSpeed,
-                recommendation,
-                level,
+                recommendation: advice.recommendation,
+                level: advice.level,
                 source_table: TRAFFIC_SOURCE.readTable,
-                generated_at: new Date().toISOString(),
+                generated_at: result.generatedAt.toISOString(),
+                target_at: target?.target_at || null,
+                lead_minutes: safeHorizon,
             },
         });
     }
     catch (err) {
         return res.status(500).json({ success: false, error: String(err) });
+    }
+});
+app.get('/api/route/outlook', async (req, res) => {
+    const nodeId = String(req.query.node_id || '').trim();
+    if (!nodeId) {
+        return res.status(400).json({ success: false, error: 'node_id is required' });
+    }
+    if (!NODE_IDS.includes(nodeId)) {
+        return res.status(400).json({ success: false, error: 'invalid node_id' });
+    }
+    const horizons = parseHorizonList(req.query.horizons, [30, 45, 60]);
+    try {
+        const result = await runPredictionSnapshot();
+        const items = result.snapshots
+            .filter((item) => horizons.includes(item.horizon_minutes))
+            .map((item) => {
+            const predictedSpeed = Number(item.predictions?.[nodeId] ?? 0);
+            const advice = buildRecommendation(predictedSpeed);
+            return {
+                node_id: nodeId,
+                horizon_minutes: item.horizon_minutes,
+                predicted_speed: predictedSpeed,
+                recommendation: advice.recommendation,
+                level: advice.level,
+                generated_at: result.generatedAt.toISOString(),
+                target_at: item.target_at,
+                lead_minutes: item.horizon_minutes,
+                source_table: TRAFFIC_SOURCE.readTable,
+            };
+        });
+        res.json({ success: true, data: items });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: String(err) });
     }
 });
 // CSV鎶ヨ〃瀵煎嚭
@@ -437,7 +624,7 @@ app.get('/api/report/predict-export', async (req, res) => {
     const { node_id } = req.query;
     try {
         const window = await (0, trafficWindow_1.buildModelWindow)(NODE_IDS);
-        const flaskResp = await axios_1.default.post('http://localhost:5001/predict/multistep', {
+        const flaskResp = await axios_1.default.post(`${AI_SERVICE_URL}/predict/multistep`, {
             window, steps: 2
         });
         const flaskData = flaskResp.data;
@@ -504,23 +691,81 @@ app.get('/api/report/predict-export', async (req, res) => {
         res.status(500).json({ success: false, error: String(err) });
     }
 });
+app.get('/api/dashboard/chart', async (req, res) => {
+    const nodeId = String(req.query.node_id || '').trim();
+    const dateText = String(req.query.date || '').trim();
+    const horizon = Number(req.query.horizon || 15);
+    if (!nodeId) {
+        return res.status(400).json({ success: false, error: 'node_id is required' });
+    }
+    if (!NODE_IDS.includes(nodeId)) {
+        return res.status(400).json({ success: false, error: 'invalid node_id' });
+    }
+    if (!dateText || !/^\d{4}-\d{2}-\d{2}$/.test(dateText)) {
+        return res.status(400).json({ success: false, error: 'date must be YYYY-MM-DD' });
+    }
+    if (horizon !== 15) {
+        return res.status(400).json({ success: false, error: 'dashboard chart currently supports 15-minute horizon only' });
+    }
+    const start = `${dateText} 00:00:00`;
+    const end = `${dateText} 23:59:59`;
+    try {
+        const [actualRows] = await db_1.default.query(`SELECT node_id, speed, congestion_status, collected_at
+       FROM ${TRAFFIC_TABLE}
+       WHERE node_id = ? AND collected_at BETWEEN ? AND ?
+       ORDER BY collected_at ASC`, [nodeId, start, end]);
+        const [predictionRows] = await db_1.default.query(`SELECT p.node_id, p.predicted_speed, p.predicted_at, p.horizon_minutes, p.target_at, p.source_table, p.model_bucket_minutes
+       FROM predictions p
+       INNER JOIN (
+         SELECT target_at, MAX(predicted_at) AS max_generated
+         FROM predictions
+         WHERE node_id = ? AND horizon_minutes = ? AND target_at BETWEEN ? AND ?
+         GROUP BY target_at
+       ) latest
+         ON p.target_at = latest.target_at AND p.predicted_at = latest.max_generated
+       WHERE p.node_id = ? AND p.horizon_minutes = ?
+       ORDER BY p.target_at ASC`, [nodeId, horizon, start, end, nodeId, horizon]);
+        res.json({
+            success: true,
+            data: {
+                node_id: nodeId,
+                date: dateText,
+                actual_series: actualRows.map((row) => ({
+                    timestamp: new Date(row.collected_at).toISOString(),
+                    speed: Number(row.speed),
+                    congestion_status: row.congestion_status,
+                })),
+                predicted_series: predictionRows.map((row) => ({
+                    generated_at: new Date(row.predicted_at).toISOString(),
+                    target_at: row.target_at ? new Date(row.target_at).toISOString() : null,
+                    predicted_speed: Number(row.predicted_speed),
+                    horizon_minutes: row.horizon_minutes,
+                    lead_minutes: row.horizon_minutes,
+                    is_leading_actual: row.horizon_minutes === 15,
+                })),
+            },
+            meta: {
+                source_table: TRAFFIC_SOURCE.readTable,
+                horizon_minutes: horizon,
+                bucket_minutes: (0, trafficWindow_1.getModelBucketMinutes)(),
+            },
+        });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: String(err) });
+    }
+});
 const PORT = process.env.PORT || 3001;
 // 姣?鍒嗛挓鑷姩瑙﹀彂涓€娆￠娴?
 node_cron_1.default.schedule('*/5 * * * *', async () => {
     console.log(`[${new Date().toLocaleString('zh')}] 瀹氭椂棰勬祴瑙﹀彂...`);
     try {
-        const window = await (0, trafficWindow_1.buildModelWindow)(NODE_IDS);
-        const flaskResp = await axios_1.default.post('http://localhost:5001/predict', { window });
-        const flaskData = flaskResp.data;
-        if (!flaskData.success) {
-            console.error('瀹氭椂棰勬祴Flask杩斿洖閿欒:', flaskData.error);
-            return;
-        }
-        const predictions = flaskData.predictions;
-        const now = new Date();
-        const insertValues = NODE_IDS.map(nid => [nid, predictions[nid] ?? 0, now]);
-        await db_1.default.query(`INSERT INTO predictions (node_id, predicted_speed, predicted_at) VALUES ?`, [insertValues]);
-        console.log(`瀹氭椂棰勬祴瀹屾垚:`, predictions);
+        const result = await runPredictionSnapshot();
+        console.log(`scheduled prediction complete`, {
+            generated_at: result.generatedAt.toISOString(),
+            horizons: result.snapshots.map((item) => item.horizon_minutes),
+            source_table: TRAFFIC_SOURCE.readTable,
+        });
     }
     catch (err) {
         console.error('瀹氭椂棰勬祴澶辫触:', err);
@@ -529,6 +774,7 @@ node_cron_1.default.schedule('*/5 * * * *', async () => {
 (0, auth_1.ensureUserTableMigration)()
     .then(async () => {
     await ensureTrafficMockTableMigration();
+    await ensurePredictionsTableMigration();
     await ensureIncidentsTableMigration();
     app.listen(PORT, () => {
         console.log(`鍚庣鏈嶅姟杩愯鍦?http://localhost:${PORT}`);

@@ -1,0 +1,3 @@
+model ready: nodes=11 window=12 buckets horizons=[15, 30, 45, 60] minutes device=cuda
+ * Serving Flask app 'app'
+ * Debug mode: off
