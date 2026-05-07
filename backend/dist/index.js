@@ -37,8 +37,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
+require("./env");
 const cors_1 = __importDefault(require("cors"));
-const dotenv_1 = __importDefault(require("dotenv"));
 const db_1 = __importDefault(require("./db"));
 const axios_1 = __importDefault(require("axios"));
 const auth_1 = __importStar(require("./auth"));
@@ -46,7 +46,6 @@ const node_cron_1 = __importDefault(require("node-cron"));
 const redis_1 = __importDefault(require("./redis"));
 const trafficSource_1 = require("./trafficSource");
 const trafficWindow_1 = require("./trafficWindow");
-dotenv_1.default.config();
 const app = (0, express_1.default)();
 app.set('trust proxy', true);
 app.use((0, cors_1.default)());
@@ -314,8 +313,8 @@ app.get('/api/predict/latest', async (req, res) => {
     const horizon = Number(req.query.horizon || 15);
     const nodeId = String(req.query.node_id || '').trim();
     try {
-        const conditions = ['p.horizon_minutes = ?'];
-        const params = [horizon];
+        const conditions = ['p.horizon_minutes = ?', 'p.source_table = ?'];
+        const params = [horizon, TRAFFIC_SOURCE.readTable];
         if (nodeId) {
             conditions.push('p.node_id = ?');
             params.push(nodeId);
@@ -325,10 +324,10 @@ app.get('/api/predict/latest', async (req, res) => {
        INNER JOIN (
          SELECT MAX(predicted_at) as max_time
          FROM predictions
-         WHERE horizon_minutes = ? AND target_at IS NOT NULL
+         WHERE horizon_minutes = ? AND target_at IS NOT NULL AND source_table = ?
        ) latest ON p.predicted_at = latest.max_time
        WHERE ${conditions.join(' AND ')} AND p.target_at IS NOT NULL
-       ORDER BY p.node_id`, [horizon, ...params]);
+       ORDER BY p.node_id`, [horizon, TRAFFIC_SOURCE.readTable, ...params]);
         res.json({
             success: true,
             data: rows,
@@ -357,11 +356,11 @@ app.get('/api/predict/outlook', async (req, res) => {
        INNER JOIN (
          SELECT horizon_minutes, MAX(predicted_at) AS max_time
          FROM predictions
-         WHERE target_at IS NOT NULL
+         WHERE target_at IS NOT NULL AND source_table = ?
          GROUP BY horizon_minutes
        ) latest ON p.horizon_minutes = latest.horizon_minutes AND p.predicted_at = latest.max_time
-       WHERE p.node_id = ? AND p.target_at IS NOT NULL
-       ORDER BY p.horizon_minutes ASC`, [nodeId]);
+       WHERE p.node_id = ? AND p.target_at IS NOT NULL AND p.source_table = ?
+       ORDER BY p.horizon_minutes ASC`, [TRAFFIC_SOURCE.readTable, nodeId, TRAFFIC_SOURCE.readTable]);
         const data = rows.map((row) => ({
             node_id: row.node_id,
             horizon_minutes: row.horizon_minutes,
@@ -719,12 +718,12 @@ app.get('/api/dashboard/chart', async (req, res) => {
        INNER JOIN (
          SELECT target_at, MAX(predicted_at) AS max_generated
          FROM predictions
-         WHERE node_id = ? AND horizon_minutes = ? AND target_at BETWEEN ? AND ?
+         WHERE node_id = ? AND horizon_minutes = ? AND target_at BETWEEN ? AND ? AND source_table = ?
          GROUP BY target_at
        ) latest
          ON p.target_at = latest.target_at AND p.predicted_at = latest.max_generated
-       WHERE p.node_id = ? AND p.horizon_minutes = ?
-       ORDER BY p.target_at ASC`, [nodeId, horizon, start, end, nodeId, horizon]);
+       WHERE p.node_id = ? AND p.horizon_minutes = ? AND p.source_table = ?
+       ORDER BY p.target_at ASC`, [nodeId, horizon, start, end, TRAFFIC_SOURCE.readTable, nodeId, horizon, TRAFFIC_SOURCE.readTable]);
         res.json({
             success: true,
             data: {

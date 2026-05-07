@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getModelBucketMinutes = getModelBucketMinutes;
 exports.getModelWindowSize = getModelWindowSize;
 exports.buildModelWindow = buildModelWindow;
+require("./env");
 const db_1 = __importDefault(require("./db"));
 const trafficSource_1 = require("./trafficSource");
 const MODEL_BUCKET_MINUTES = Number(process.env.MODEL_BUCKET_MINUTES || 5);

@@ -3,7 +3,8 @@ import logging
 import math
 import os
 import random
-from datetime import datetime
+import csv
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pymysql
@@ -31,8 +32,16 @@ MOCK_TABLE = os.getenv('TRAFFIC_MOCK_TABLE', 'traffic_flow_mock')
 REAL_TABLE = os.getenv('TRAFFIC_REAL_TABLE', 'traffic_flow')
 REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
 REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
-ENABLE_INCIDENTS = os.getenv('TRAFFIC_MOCK_ENABLE_INCIDENTS', 'true').lower() == 'true'
-INCIDENT_RATE = float(os.getenv('TRAFFIC_MOCK_INCIDENT_RATE', '0.08'))
+ENABLE_INCIDENTS = os.getenv('TRAFFIC_MOCK_ENABLE_INCIDENTS', 'false').lower() == 'true'
+INCIDENT_RATE = float(os.getenv('TRAFFIC_MOCK_INCIDENT_RATE', '0.004'))
+NOISE_STD = float(os.getenv('TRAFFIC_MOCK_NOISE_STD', '0.45'))
+MAX_STEP_DELTA = float(os.getenv('TRAFFIC_MOCK_MAX_STEP_DELTA', '2.4'))
+HISTORICAL_PROFILE_PATH = Path(
+    os.getenv(
+        'TRAFFIC_MOCK_HISTORICAL_PROFILE',
+        str(Path(__file__).resolve().parents[1] / 'model' / 'generated' / 'train_20260505050000' / 'aligned.csv'),
+    )
+)
 
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
@@ -93,6 +102,7 @@ CLUSTERS = {
 
 ROAD_COUNTS = {node['id']: max(1, len(NEIGHBORS[node['id']])) for node in NODES}
 ACTIVE_INCIDENTS = []
+HISTORICAL_PROFILE = None
 
 
 def connect_db():
@@ -124,6 +134,63 @@ def gaussian(value: float, center: float, spread: float):
     return math.exp(-((value - center) ** 2) / (2 * spread ** 2))
 
 
+def load_historical_profile():
+    global HISTORICAL_PROFILE
+    if HISTORICAL_PROFILE is not None:
+        return HISTORICAL_PROFILE
+
+    profile = {node['id']: {} for node in NODES}
+    if not HISTORICAL_PROFILE_PATH.exists():
+        HISTORICAL_PROFILE = profile
+        log.warning('historical mock profile missing: %s', HISTORICAL_PROFILE_PATH)
+        return HISTORICAL_PROFILE
+
+    with HISTORICAL_PROFILE_PATH.open('r', encoding='utf-8-sig', newline='') as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            node_id = row.get('node_id')
+            if node_id not in profile:
+                continue
+            try:
+                bucket_time = datetime.fromisoformat(str(row.get('bucket_time')))
+                speed = float(row.get('speed') or 0)
+            except (TypeError, ValueError):
+                continue
+            minute = bucket_time.hour * 60 + bucket_time.minute
+            profile[node_id].setdefault(minute, []).append(speed)
+
+    HISTORICAL_PROFILE = {
+        node_id: {
+            minute: sum(values) / len(values)
+            for minute, values in minute_map.items()
+            if values
+        }
+        for node_id, minute_map in profile.items()
+    }
+    loaded = sum(len(minute_map) for minute_map in HISTORICAL_PROFILE.values())
+    log.info('historical mock profile loaded path=%s minute_profiles=%s', HISTORICAL_PROFILE_PATH, loaded)
+    return HISTORICAL_PROFILE
+
+
+def historical_profile_speed(node_id: str, current_time: datetime):
+    profile = load_historical_profile().get(node_id, {})
+    if not profile:
+        return None
+
+    minute = current_time.hour * 60 + current_time.minute
+    lower = (minute // 5) * 5
+    upper = min(24 * 60 - 5, lower + 5)
+    lower_value = profile.get(lower)
+    upper_value = profile.get(upper, lower_value)
+    if lower_value is None:
+        nearest_minute = min(profile, key=lambda item: abs(item - minute))
+        return profile[nearest_minute]
+    if upper_value is None or upper == lower:
+        return lower_value
+    ratio = (minute - lower) / max(1, upper - lower)
+    return lower_value * (1 - ratio) + upper_value * ratio
+
+
 def base_speed_for_time(current_time: datetime):
     minute_of_day = current_time.hour * 60 + current_time.minute
     hour = minute_of_day / 60.0
@@ -133,6 +200,13 @@ def base_speed_for_time(current_time: datetime):
     base -= 21.0 * gaussian(hour, 18.1, 1.5)
     base += 4.0 * gaussian(hour, 2.5, 1.8)
     return max(14.0, min(58.0, base))
+
+
+def target_speed_for_node(node_id: str, current_time: datetime, cluster_adjustment: float):
+    historical = historical_profile_speed(node_id, current_time)
+    if historical is not None:
+        return historical + cluster_adjustment + random.gauss(0, NOISE_STD)
+    return base_speed_for_time(current_time) + NODE_BIAS[node_id] + cluster_adjustment + random.gauss(0, NOISE_STD)
 
 
 def congestion_status_from_speed(speed: float):
@@ -197,9 +271,9 @@ def update_incidents():
 
     incident = {
         'node_id': random.choice(candidates),
-        'remaining_cycles': random.randint(6, 20),
-        'penalty': random.uniform(8.0, 18.0),
-        'neighbor_ratio': random.uniform(0.3, 0.55),
+        'remaining_cycles': random.randint(8, 18),
+        'penalty': random.uniform(3.0, 7.0),
+        'neighbor_ratio': random.uniform(0.15, 0.28),
     }
     ACTIVE_INCIDENTS.append(incident)
     log.info(
@@ -213,9 +287,9 @@ def update_incidents():
 def build_cluster_wave(current_time: datetime):
     minute_of_day = current_time.hour * 60 + current_time.minute
     return {
-        'south': math.sin(minute_of_day / 26.0) * 1.5 + random.gauss(0, 0.5),
-        'central': math.cos(minute_of_day / 34.0) * 1.8 + random.gauss(0, 0.6),
-        'east': math.sin(minute_of_day / 41.0 + 0.8) * 1.1 + random.gauss(0, 0.4),
+        'south': math.sin(minute_of_day / 26.0) * 1.2 + random.gauss(0, 0.18),
+        'central': math.cos(minute_of_day / 34.0) * 1.4 + random.gauss(0, 0.2),
+        'east': math.sin(minute_of_day / 41.0 + 0.8) * 0.9 + random.gauss(0, 0.15),
     }
 
 
@@ -243,10 +317,13 @@ def generate_snapshot(current_time: datetime, previous_snapshot: dict):
         neighbor_values = [previous_snapshot.get(neighbor, base_speed) for neighbor in NEIGHBORS[node_id]]
         neighbor_avg = sum(neighbor_values) / len(neighbor_values) if neighbor_values else base_speed
         prev_value = previous_snapshot.get(node_id, base_speed)
-        target = base_speed + NODE_BIAS[node_id] + cluster_wave[node_cluster] + random.gauss(0, 1.1)
-        blended = prev_value * 0.52 + neighbor_avg * 0.2 + target * 0.28
+        target = target_speed_for_node(node_id, current_time, cluster_wave[node_cluster])
+        blended = prev_value * 0.62 + neighbor_avg * 0.06 + target * 0.32
         adjusted = apply_incident_penalty(node_id, blended)
-        snapshot[node_id] = round(max(8.0, min(62.0, adjusted)), 2)
+        lower_bound = prev_value - MAX_STEP_DELTA
+        upper_bound = prev_value + MAX_STEP_DELTA
+        smoothed = max(lower_bound, min(upper_bound, adjusted))
+        snapshot[node_id] = round(max(10.0, min(62.0, smoothed)), 2)
 
     return snapshot
 
@@ -278,11 +355,8 @@ def update_redis_cache(records: list):
         log.warning('redis cache update skipped: %s', error)
 
 
-def collect_once():
-    ensure_mock_table()
-    current_time = datetime.now().replace(second=0, microsecond=0)
+def build_records(current_time: datetime, previous_snapshot: dict):
     update_incidents()
-    previous_snapshot = bootstrap_previous_snapshot(current_time)
     snapshot = generate_snapshot(current_time, previous_snapshot)
 
     records = []
@@ -296,11 +370,47 @@ def collect_once():
             'congestion_status': congestion_status_from_speed(speed),
             'road_count': ROAD_COUNTS[node_id],
         })
+    return records, snapshot
 
+
+def collect_once(current_time: datetime | None = None):
+    ensure_mock_table()
+    current_time = (current_time or datetime.now()).replace(second=0, microsecond=0)
+    previous_snapshot = bootstrap_previous_snapshot(current_time)
+    records, _snapshot = build_records(current_time, previous_snapshot)
     save_records(records)
     update_redis_cache(records)
     log.info('mock cycle complete table=%s rows=%s incidents=%s', MOCK_TABLE, len(records), len(ACTIVE_INCIDENTS))
     return records
+
+
+def collect_backfill(hours: float = 24.0, interval_minutes: int = 1):
+    ensure_mock_table()
+    now = datetime.now().replace(second=0, microsecond=0)
+    start_time = now - timedelta(hours=hours)
+    current_time = start_time.replace(second=0, microsecond=0)
+    previous_snapshot = bootstrap_previous_snapshot(current_time)
+    all_records = []
+    latest_records = []
+
+    while current_time <= now:
+        records, previous_snapshot = build_records(current_time, previous_snapshot)
+        all_records.extend(records)
+        latest_records = records
+        current_time += timedelta(minutes=interval_minutes)
+
+    if all_records:
+        save_records(all_records)
+    if latest_records:
+        update_redis_cache(latest_records)
+    log.info(
+        'mock backfill complete table=%s hours=%.2f interval=%sm rows=%s',
+        MOCK_TABLE,
+        hours,
+        interval_minutes,
+        len(all_records),
+    )
+    return all_records
 
 
 if __name__ == '__main__':

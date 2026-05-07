@@ -1,3 +1,4 @@
+import './env';
 import pool from './db';
 import { getTrafficReadTableSql } from './trafficSource';
 

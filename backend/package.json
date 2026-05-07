@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "nodemon --exec ts-node src/index.ts",
     "build": "tsc",
-    "prepare-train-data": "ts-node src/tools/prepareTrainingData.ts"
+    "prepare-train-data": "ts-node src/tools/prepareTrainingData.ts",
+    "backfill-predictions": "ts-node src/tools/backfillPredictions.ts"
   },
   "keywords": [],
   "author": "",

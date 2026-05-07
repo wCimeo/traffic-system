@@ -1,3 +1,5 @@
+import './env';
+
 type TrafficReadSource = 'real' | 'mock';
 
 function validateTableName(name: string) {

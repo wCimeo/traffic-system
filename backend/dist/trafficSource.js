@@ -5,6 +5,7 @@ exports.getTrafficReadTableName = getTrafficReadTableName;
 exports.getTrafficReadTableSql = getTrafficReadTableSql;
 exports.getTrafficLatestCacheKey = getTrafficLatestCacheKey;
 exports.getTrafficSourceConfig = getTrafficSourceConfig;
+require("./env");
 function validateTableName(name) {
     const normalized = String(name || '').trim();
     if (!/^[A-Za-z0-9_]+$/.test(normalized)) {

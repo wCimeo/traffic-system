@@ -1,154 +1,321 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Area, AreaChart
+  Brush,
+  CartesianGrid,
+  ComposedChart,
+  Line,
+  ReferenceArea,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from 'recharts';
 import { motion } from 'motion/react';
-import { 
-  Activity, 
-  Wind, 
-  MapPin, 
-  Zap, 
+import {
+  Activity,
+  CalendarDays,
+  Gauge,
+  MapPin,
   RefreshCcw,
-  ArrowRight,
-  Gauge
+  TrendingUp,
+  Wind,
+  Zap,
 } from 'lucide-react';
-import api from '../api';
+import api, { fetchDashboardChart, triggerPrediction } from '../api';
 import { useToast } from '../components/ToastProvider';
 
-const NODE_OPTIONS = ['A1','B2','C3','D4','E5','F6','G7','H8','I9','J10','K11'];
+const NODE_OPTIONS = ['A1', 'B2', 'C3', 'D4', 'E5', 'F6', 'G7', 'H8', 'I9', 'J10', 'K11'];
 
-const STATUS_LABEL: Record<number, { label: string; color: string; bg: string }> = {
-  0: { label: '未知', color: '#94a3b8', bg: '#f1f5f9' },
-  1: { label: '畅通', color: '#10b981', bg: '#ecfdf5' },
-  2: { label: '缓行', color: '#f59e0b', bg: '#fffbeb' },
-  3: { label: '拥堵', color: '#ef4444', bg: '#fef2f2' },
-  4: { label: '严堵', color: '#991b1b', bg: '#fef2f2' },
+const PEAK_WINDOWS = [
+  { label: '早高峰', start: 7 * 60, end: 9 * 60, color: '#f59e0b' },
+  { label: '午高峰', start: 12 * 60, end: 14 * 60, color: '#0ea5e9' },
+  { label: '晚高峰', start: 17 * 60, end: 19 * 60, color: '#ef4444' },
+];
+
+const FULL_DAY_STEP_MINUTES = 5;
+
+type TrafficRow = {
+  node_id: string;
+  speed: number;
+  congestion_status: number;
+  collected_at: string;
+};
+
+type ActualSeriesItem = {
+  timestamp: string;
+  speed: number;
+  congestion_status: number;
+};
+
+type PredictionSeriesItem = {
+  generated_at: string;
+  target_at: string | null;
+  predicted_speed: number;
+  horizon_minutes: number;
+  lead_minutes: number;
+  is_leading_actual: boolean;
+};
+
+type ChartPoint = {
+  minute: number;
+  time: string;
+  actualSpeed?: number;
+  predictedSpeed?: number;
+  actualStatus?: number;
+  generatedAt?: string;
+};
+
+type ZoomRange = {
+  startIndex: number;
+  endIndex: number;
+};
+
+const toDateInputValue = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const minuteOfDay = (timestamp: string) => {
+  const date = new Date(timestamp);
+  return date.getHours() * 60 + date.getMinutes();
+};
+
+const minuteToLabel = (minute: number) => {
+  const hour = Math.floor(minute / 60);
+  const min = minute % 60;
+  return `${`${hour}`.padStart(2, '0')}:${`${min}`.padStart(2, '0')}`;
+};
+
+const statusText = (status?: number) => {
+  if (status === 1) return '畅通';
+  if (status === 2) return '缓行';
+  if (status === 3) return '拥堵';
+  if (status === 4) return '严重拥堵';
+  return '未知';
+};
+
+const formatDateTime = (value?: string | null) => {
+  if (!value) return '--';
+  return new Date(value).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+const buildChartPoints = (actual: ActualSeriesItem[], predicted: PredictionSeriesItem[]) => {
+  const bucket = new Map<number, ChartPoint>();
+
+  for (let minute = 0; minute <= 24 * 60; minute += FULL_DAY_STEP_MINUTES) {
+    bucket.set(minute, {
+      minute,
+      time: minuteToLabel(minute),
+    });
+  }
+
+  actual.forEach((item) => {
+    const minute = minuteOfDay(item.timestamp);
+    bucket.set(minute, {
+      ...bucket.get(minute),
+      minute,
+      time: minuteToLabel(minute),
+      actualSpeed: Number(item.speed.toFixed(2)),
+      actualStatus: item.congestion_status,
+    });
+  });
+
+  predicted.forEach((item) => {
+    if (!item.target_at) return;
+    const minute = minuteOfDay(item.target_at);
+    bucket.set(minute, {
+      ...bucket.get(minute),
+      minute,
+      time: minuteToLabel(minute),
+      predictedSpeed: Number(item.predicted_speed.toFixed(2)),
+      generatedAt: item.generated_at,
+    });
+  });
+
+  if (!bucket.has(24 * 60)) {
+    bucket.set(24 * 60, {
+      minute: 24 * 60,
+      time: minuteToLabel(24 * 60),
+    });
+  }
+
+  return Array.from(bucket.values()).sort((a, b) => a.minute - b.minute);
+};
+
+const ChartTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  const point = payload[0]?.payload as ChartPoint;
+  const actual = payload.find((item: any) => item.dataKey === 'actualSpeed' && item.value !== undefined);
+  const predicted = payload.find((item: any) => item.dataKey === 'predictedSpeed' && item.value !== undefined);
+
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-xl shadow-slate-900/10">
+      <div className="mb-2 text-xs font-black text-slate-900">{minuteToLabel(Number(label))}</div>
+      {actual && (
+        <div className="text-xs font-bold text-emerald-600">
+          真实采集：{actual.value} km/h · {statusText(point.actualStatus)}
+        </div>
+      )}
+      {predicted && (
+        <div className="mt-1 text-xs font-bold text-sky-600">
+          15分钟预测：{predicted.value} km/h
+        </div>
+      )}
+      {predicted && (
+        <div className="mt-1 text-[11px] font-semibold text-slate-400">
+          生成时间：{formatDateTime(point.generatedAt)}
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default function Dashboard() {
   const { showToast } = useToast();
-  const [latest, setLatest] = useState<any[]>([]);
-  const [history, setHistory] = useState<any[]>([]);
-  const [predictions, setPredictions] = useState<any[]>([]);
+  const [latest, setLatest] = useState<TrafficRow[]>([]);
   const [selectedNode, setSelectedNode] = useState('A1');
+  const [selectedDate, setSelectedDate] = useState(toDateInputValue());
+  const [chartPoints, setChartPoints] = useState<ChartPoint[]>([]);
+  const [chartMeta, setChartMeta] = useState({ actualCount: 0, predictedCount: 0, sourceTable: '--' });
+  const [zoomRange, setZoomRange] = useState<ZoomRange>({ startIndex: 0, endIndex: 0 });
+  const [chartLoading, setChartLoading] = useState(false);
   const [predicting, setPredicting] = useState(false);
   const [pendingIncidents, setPendingIncidents] = useState(0);
 
-  // 加载最新路况
-  const loadLatest = async () => {
+  const loadLatest = useCallback(async () => {
     try {
       const res = await api.get('/api/traffic/latest');
       setLatest(res.data.data || []);
-    } catch (e) {
-      setLatest([
-        { node_id: 'A1', speed: 45.2, congestion_status: 1 },
-        { node_id: 'B2', speed: 22.5, congestion_status: 2 },
-        { node_id: 'C3', speed: 12.8, congestion_status: 3 },
-        { node_id: 'D4', speed: 48.0, congestion_status: 1 },
-        { node_id: 'E5', speed: 35.5, congestion_status: 1 },
-        { node_id: 'F6', speed: 8.2, congestion_status: 4 },
-      ]);
+    } catch {
+      setLatest([]);
     }
-  };
+  }, []);
 
-  const loadHistory = async (nodeId: string) => {
+  const loadDashboardChart = useCallback(async () => {
+    setChartLoading(true);
     try {
-      const res = await api.get(`/api/traffic/history?node_id=${nodeId}&limit=24`);
-      const rows = res.data.data || [];
-      setHistory(rows.map((r: any) => ({
-        time: new Date(r.collected_at).toLocaleTimeString('zh', { hour: '2-digit', minute: '2-digit' }),
-        speed: r.speed,
-      })).reverse());
-    } catch (e) {
-      setHistory([
-        { time: '08:00', speed: 40 },
-        { time: '09:00', speed: 25 },
-        { time: '10:00', speed: 45 },
-        { time: '11:00', speed: 50 },
-        { time: '12:00', speed: 30 },
-      ]);
+      const res = await fetchDashboardChart(selectedNode, selectedDate, 15);
+      const data = res.data.data;
+      const points = buildChartPoints(data.actual_series || [], data.predicted_series || []);
+      setChartPoints(points);
+      setZoomRange({ startIndex: 0, endIndex: Math.max(points.length - 1, 0) });
+      setChartMeta({
+        actualCount: data.actual_series?.length || 0,
+        predictedCount: data.predicted_series?.length || 0,
+        sourceTable: res.data.meta?.source_table || '--',
+      });
+    } catch (err) {
+      console.error(err);
+      setChartPoints([]);
+      setZoomRange({ startIndex: 0, endIndex: 0 });
+      setChartMeta({ actualCount: 0, predictedCount: 0, sourceTable: '--' });
+      showToast('Dashboard 图表数据加载失败，请检查后端服务和数据源配置', 'error');
+    } finally {
+      setChartLoading(false);
     }
-  };
-
-  const loadPredictions = async () => {
-    try {
-      const res = await api.get('/api/predict/latest');
-      setPredictions(res.data.data || []);
-    } catch (e) {
-      setPredictions([
-        { node_id: 'A1', predicted_speed: 42.5 },
-        { node_id: 'B2', predicted_speed: 28.1 },
-        { node_id: 'C3', predicted_speed: 15.4 },
-      ]);
-    }
-  };
+  }, [selectedDate, selectedNode, showToast]);
 
   const triggerPredict = async () => {
     setPredicting(true);
     try {
-      await api.post('/api/predict/trigger');
-      await loadPredictions();
-      showToast('全域预测已刷新', 'success');
+      await triggerPrediction();
+      await loadDashboardChart();
+      showToast('15/30/45/60 分钟预测已刷新', 'success');
     } catch (e) {
       console.error(e);
-      showToast('预测触发失败，请稍后重试', 'error');
+      showToast('预测触发失败，请确认 AI 服务与后端都已启动', 'error');
     } finally {
-      setTimeout(() => setPredicting(false), 1500);
+      setPredicting(false);
     }
   };
 
-  const loadPendingIncidents = async () => {
+  const loadPendingIncidents = useCallback(async () => {
     try {
       const res = await api.get('/api/incidents');
       const incidents = res.data.data || [];
-      const count = incidents.filter((i: any) => i.status === 'reported').length;
-      setPendingIncidents(count);
-    } catch (e) {
+      setPendingIncidents(incidents.filter((i: any) => i.status === 'reported').length);
+    } catch {
       setPendingIncidents(0);
     }
-  };
-
-  useEffect(() => {
-    loadLatest();
-    loadPredictions();
-    loadPendingIncidents();
-    const timer = setInterval(loadLatest, 60000);
-    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
-    loadHistory(selectedNode);
-  }, [selectedNode]);
+    loadLatest();
+    loadPendingIncidents();
+    const timer = window.setInterval(loadLatest, 60000);
+    return () => window.clearInterval(timer);
+  }, [loadLatest, loadPendingIncidents]);
+
+  useEffect(() => {
+    loadDashboardChart();
+  }, [loadDashboardChart]);
 
   const avgSpeed = latest.length
-    ? (latest.reduce((s, r) => s + r.speed, 0) / latest.length).toFixed(1)
+    ? (latest.reduce((sum, row) => sum + Number(row.speed), 0) / latest.length).toFixed(1)
     : '--';
-  const congested = latest.filter((r) => r.congestion_status >= 2).length;
+  const congested = latest.filter((row) => row.congestion_status >= 2).length;
+  const selectedLatest = latest.find((row) => row.node_id === selectedNode);
+  const visibleChartPoints = useMemo(() => {
+    if (!chartPoints.length) return [];
+    const startIndex = Math.max(0, Math.min(zoomRange.startIndex, chartPoints.length - 1));
+    const endIndex = Math.max(startIndex, Math.min(zoomRange.endIndex, chartPoints.length - 1));
+    return chartPoints.slice(startIndex, endIndex + 1);
+  }, [chartPoints, zoomRange]);
+
+  const xDomain = useMemo<[number, number]>(() => {
+    if (visibleChartPoints.length < 2) return [0, 1440];
+    const first = visibleChartPoints[0].minute;
+    const last = visibleChartPoints[visibleChartPoints.length - 1].minute;
+    return [Math.max(0, first - 5), Math.min(1440, last + 5)];
+  }, [visibleChartPoints]);
+
+  const yDomain = useMemo<[number, number]>(() => {
+    const values = visibleChartPoints.flatMap((point) =>
+      [point.actualSpeed, point.predictedSpeed].filter((value): value is number => typeof value === 'number')
+    );
+    if (!values.length) return [0, 70];
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const padding = Math.max(3, (max - min) * 0.18);
+    return [Math.max(0, Math.floor(min - padding)), Math.min(80, Math.ceil(max + padding))];
+  }, [visibleChartPoints]);
+
+  const chartTicks = useMemo(() => {
+    const [start, end] = xDomain;
+    const span = Math.max(1, end - start);
+    const step = span <= 120 ? 15 : span <= 360 ? 30 : span <= 720 ? 60 : 120;
+    const firstTick = Math.ceil(start / step) * step;
+    const ticks: number[] = [];
+    for (let minute = firstTick; minute <= end; minute += step) {
+      ticks.push(minute);
+    }
+    return ticks.length ? ticks : [start, end];
+  }, [xDomain]);
 
   const container = {
     hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1
-      }
-    }
+    show: { opacity: 1, transition: { staggerChildren: 0.08 } },
   };
 
   const item = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0 }
+    hidden: { opacity: 0, y: 18 },
+    show: { opacity: 1, y: 0 },
   };
 
   return (
     <div className="space-y-10 pb-10">
-      {/* Metrics Row */}
-      <motion.div 
+      <motion.div
         variants={container}
         initial="hidden"
         animate="show"
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
+        className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4"
       >
         {[
           { label: '监测节点总数', value: `${latest.length}`, unit: '个', icon: MapPin, color: 'text-slate-900' },
@@ -158,111 +325,225 @@ export default function Dashboard() {
         ].map((card) => (
           <motion.div key={card.label} variants={item} className="metric-card group relative overflow-hidden">
             <div className="relative z-10">
-              <div className="flex items-center justify-between mb-6">
-                <span className="text-[12px] font-black uppercase tracking-widest text-slate-600 group-hover:text-slate-500 transition-colors">{card.label}</span>
-                <card.icon className={`h-5 w-5 ${card.color} opacity-20 group-hover:opacity-100 transition-all duration-500`} />
+              <div className="mb-6 flex items-center justify-between">
+                <span className="text-[12px] font-black uppercase tracking-widest text-slate-600 transition-colors group-hover:text-slate-500">
+                  {card.label}
+                </span>
+                <card.icon className={`h-5 w-5 ${card.color} opacity-20 transition-all duration-500 group-hover:opacity-100`} />
               </div>
               <div className="flex items-baseline gap-2">
-                <span className={`text-4xl font-black tracking-tight data-mono ${card.color}`}>{card.value}</span>
-                <span className="text-[10px] font-bold text-slate-300 uppercase tracking-tighter">{card.unit}</span>
+                <span className={`data-mono text-4xl font-black tracking-tight ${card.color}`}>{card.value}</span>
+                <span className="text-[10px] font-bold uppercase tracking-tighter text-slate-300">{card.unit}</span>
               </div>
             </div>
-            <div className="absolute -bottom-6 -right-6 h-24 w-24 rounded-full bg-slate-50 group-hover:scale-150 transition-transform duration-700 z-0 opacity-50" />
+            <div className="absolute -bottom-6 -right-6 z-0 h-24 w-24 rounded-full bg-slate-50 opacity-50 transition-transform duration-700 group-hover:scale-150" />
           </motion.div>
         ))}
       </motion.div>
 
-      {/* Header Info */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="flex items-center gap-2 mb-2">
-            <div className="h-2 w-2 rounded-full bg-brand-500 animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">核心节点实时遥测中</span>
+          <div className="mb-2 flex items-center gap-2">
+            <div className="h-2 w-2 animate-pulse rounded-full bg-brand-500" />
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Daily Traffic Outlook</span>
           </div>
-          <p className="mt-2 text-slate-500 font-medium max-w-xl leading-relaxed">
-            集中实时采集成都核心路口流量，依托 <span className="text-slate-900 font-bold italic">LST-GCN</span> 时空建模实现流速推演。
+          <h2 className="text-2xl font-black tracking-tight text-slate-900">日内交通速度与 15 分钟预测</h2>
+          <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
+            按日期查看 00:00-24:00 的真实采集曲线与预测曲线。拖动图表底部缩放条，可以聚焦到任意时段。
           </p>
         </div>
-        <div className="flex items-center gap-3 bg-white p-2 rounded-2xl border border-slate-200/60 shadow-soft">
-          <select
-            className="h-11 pl-4 pr-10 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-700 focus:ring-2 focus:ring-brand-500/20 outline-none appearance-none cursor-pointer"
-            style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\' stroke-width=\'2\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.75rem center', backgroundSize: '1rem' }}
-            value={selectedNode}
-            onChange={(e) => setSelectedNode(e.target.value)}
-          >
-            {NODE_OPTIONS.map((n) => (
-              <option key={n} value={n}>路口: {n}</option>
-            ))}
-          </select>
-          <button
-            onClick={triggerPredict}
-            disabled={predicting}
-            className="btn-primary min-w-[140px] gap-2"
-          >
+
+        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/70 bg-white p-3 shadow-soft sm:flex-row sm:items-center">
+          <label className="flex h-11 items-center gap-2 rounded-xl bg-slate-50 px-3 text-sm font-bold text-slate-700">
+            <MapPin className="h-4 w-4 text-brand-500" />
+            <select
+              className="h-full bg-transparent pr-6 text-sm font-bold outline-none"
+              value={selectedNode}
+              onChange={(e) => setSelectedNode(e.target.value)}
+            >
+              {NODE_OPTIONS.map((node) => (
+                <option key={node} value={node}>
+                  路口 {node}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex h-11 items-center gap-2 rounded-xl bg-slate-50 px-3 text-sm font-bold text-slate-700">
+            <CalendarDays className="h-4 w-4 text-brand-500" />
+            <input
+              type="date"
+              className="h-full bg-transparent text-sm font-bold outline-none"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+            />
+          </label>
+
+          <button onClick={triggerPredict} disabled={predicting} className="btn-primary h-11 min-w-[150px] gap-2">
             <RefreshCcw className={`h-4 w-4 ${predicting ? 'animate-spin' : ''}`} />
-            <span>{predicting ? 'AI 矢量外推中' : '执行全域预测'}</span>
+            <span>{predicting ? '预测中' : '刷新预测'}</span>
           </button>
         </div>
       </div>
 
-
-      {/* Chart Column */}
-      <div className="min-w-0 space-y-8 lg:col-span-2">
-        <div className="console-card flex h-[520px] min-w-0 flex-col">
-          <div className="p-8 border-b border-slate-50 flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-black uppercase tracking-widest text-slate-900">时空流量演化特征谱</h3>
-              <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase">当前监测基站: {selectedNode} · 动态 24 小时历史流速均值</p>
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 rounded-lg border border-slate-100">
-              <Gauge className="h-3.5 w-3.5 text-brand-500" />
-              <span className="text-[10px] font-black text-slate-600 uppercase">实时遥测链路正常</span>
-            </div>
+      <div className="console-card flex h-[620px] min-w-0 flex-col">
+        <div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-widest text-slate-900">00:00-24:00 速度曲线</h3>
+            <p className="mt-1 text-xs font-bold text-slate-400">
+              {selectedDate} · {selectedNode} · 数据源 {chartMeta.sourceTable}
+            </p>
           </div>
-          <div className="min-h-0 min-w-0 flex-1 p-6">
-            <div className="h-full min-h-[320px] min-w-0">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={320}>
-                <AreaChart data={history}>
-                <defs>
-                  <linearGradient id="colorSpeed" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="time" 
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
+          <div className="flex flex-wrap items-center gap-4 text-xs font-black">
+            <span className="inline-flex items-center gap-2 text-emerald-600">
+              <span className="h-1 w-8 rounded-full bg-emerald-500" />
+              真实采集曲线
+            </span>
+            <span className="inline-flex items-center gap-2 text-sky-600">
+              <span className="h-1 w-8 rounded-full border-t-2 border-dashed border-sky-500" />
+              15 分钟预测
+            </span>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 p-5">
+          <ResponsiveContainer width="100%" height="100%" minHeight={380}>
+            <ComposedChart data={chartPoints} margin={{ top: 18, right: 28, bottom: 28, left: 0 }}>
+              <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#eef2f7" />
+              {PEAK_WINDOWS.map((peak) => (
+                <ReferenceArea
+                  key={peak.label}
+                  x1={peak.start}
+                  x2={peak.end}
+                  y1={0}
+                  y2={70}
+                  fill={peak.color}
+                  fillOpacity={0.07}
+                  strokeOpacity={0}
+                  label={{
+                    value: peak.label,
+                    fill: peak.color,
+                    fontSize: 11,
+                    fontWeight: 800,
+                    position: 'top',
+                  }}
                 />
-                <YAxis 
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
-                  unit=" km"
-                />
-                <Tooltip 
-                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', padding: '12px 16px' }}
-                  labelStyle={{ fontWeight: 800, color: '#1e293b', marginBottom: '4px', fontSize: '12px' }}
-                  itemStyle={{ fontSize: '12px', fontWeight: 600, color: '#10b981' }}
-                />
-                <Area 
-                  type="monotone" 
-                  dataKey="speed" 
-                  stroke="#10b981" 
-                  strokeWidth={4} 
-                  fillOpacity={1} 
-                  fill="url(#colorSpeed)" 
-                  animationDuration={2000}
-                />
-                </AreaChart>
-              </ResponsiveContainer>
+              ))}
+              <XAxis
+                dataKey="minute"
+                type="number"
+                domain={xDomain}
+                ticks={chartTicks}
+                tickFormatter={minuteToLabel}
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
+              />
+              <YAxis
+                domain={yDomain}
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
+                unit=" km/h"
+              />
+              <Tooltip content={<ChartTooltip />} />
+              <Line
+                name="真实采集曲线"
+                type="natural"
+                dataKey="actualSpeed"
+                stroke="#10b981"
+                strokeWidth={3}
+                dot={false}
+                activeDot={{ r: 4, strokeWidth: 0, fill: '#10b981' }}
+                connectNulls
+                isAnimationActive={false}
+              />
+              <Line
+                name="15分钟预测"
+                type="natural"
+                dataKey="predictedSpeed"
+                stroke="#0284c7"
+                strokeWidth={3}
+                strokeDasharray="8 6"
+                dot={false}
+                activeDot={{ r: 4, strokeWidth: 0, fill: '#0284c7' }}
+                connectNulls
+                isAnimationActive={false}
+              />
+              <Brush
+                dataKey="time"
+                startIndex={zoomRange.startIndex}
+                endIndex={zoomRange.endIndex}
+                onChange={(range) => {
+                  if (typeof range?.startIndex !== 'number' || typeof range?.endIndex !== 'number') return;
+                  setZoomRange({ startIndex: range.startIndex, endIndex: range.endIndex });
+                }}
+                height={34}
+                travellerWidth={12}
+                stroke="#0f766e"
+                fill="#f8fafc"
+                tickFormatter={(value) => String(value)}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+
+        {!chartLoading && chartMeta.actualCount + chartMeta.predictedCount === 0 && (
+          <div className="px-6 pb-6 text-sm font-bold text-slate-400">
+            当前日期没有可展示的真实采集或预测记录。请确认数据源已采集，并执行一次预测刷新。
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="console-card p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="text-xs font-black uppercase tracking-widest text-slate-400">Selected Node</div>
+            <Gauge className="h-4 w-4 text-brand-500" />
+          </div>
+          <div className="text-3xl font-black text-slate-900">{selectedNode}</div>
+          <div className="mt-3 text-sm font-bold text-slate-500">
+            最新速度：{selectedLatest ? `${Number(selectedLatest.speed).toFixed(1)} km/h` : '--'}
+          </div>
+          <div className="mt-1 text-sm font-bold text-slate-500">
+            最新状态：{statusText(selectedLatest?.congestion_status)}
+          </div>
+        </div>
+
+        <div className="console-card p-5">
+          <div className="mb-4 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400">
+            <TrendingUp className="h-4 w-4 text-brand-500" />
+            Chart Summary
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-sm font-bold">
+              <span className="text-slate-500">真实采集记录</span>
+              <span className="text-emerald-600">{chartMeta.actualCount}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm font-bold">
+              <span className="text-slate-500">15分钟预测记录</span>
+              <span className="text-sky-600">{chartMeta.predictedCount}</span>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-3 text-xs font-semibold leading-relaxed text-slate-500">
+              真实采集点不再密集显示，悬停时会出现焦点点位，保持曲线阅读优先。
             </div>
           </div>
         </div>
-      </div>
 
+        <div className="console-card p-5">
+          <div className="mb-4 text-xs font-black uppercase tracking-widest text-slate-400">Peak Windows</div>
+          <div className="space-y-3">
+            {PEAK_WINDOWS.map((peak) => (
+              <div key={peak.label} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
+                <span className="text-sm font-black text-slate-700">{peak.label}</span>
+                <span className="text-xs font-bold text-slate-400">
+                  {minuteToLabel(peak.start)}-{minuteToLabel(peak.end)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

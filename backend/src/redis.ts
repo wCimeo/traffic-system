@@ -1,3 +1,4 @@
+import './env';
 import Redis from 'ioredis';
 
 const redis = new Redis({
@@ -9,7 +10,7 @@ const redis = new Redis({
   },
 });
 
-redis.on('connect', () => console.log('Redis连接成功'));
-redis.on('error', (err) => console.warn('Redis连接失败，降级为直查MySQL:', err.message));
+redis.on('connect', () => console.log('Redis connected'));
+redis.on('error', (err) => console.warn('Redis connection failed, fallback to MySQL:', err.message));
 
 export default redis;

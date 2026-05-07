@@ -17,7 +17,7 @@ def load_env():
 
 load_env()
 
-from mock_collector import collect_once as collect_mock_once, log as mock_log  # noqa: E402
+from mock_collector import collect_backfill as collect_mock_backfill, collect_once as collect_mock_once, log as mock_log  # noqa: E402
 
 
 def run_real_once():
@@ -29,6 +29,8 @@ def run_real_once():
 def main():
     parser = argparse.ArgumentParser(description='Traffic collector runner')
     parser.add_argument('--once', action='store_true', help='collect one cycle and exit')
+    parser.add_argument('--backfill-hours', type=float, default=0, help='mock mode only: generate historical mock data and exit')
+    parser.add_argument('--backfill-interval-minutes', type=int, default=1, help='mock backfill interval in minutes')
     args = parser.parse_args()
 
     mode = os.getenv('TRAFFIC_COLLECTION_MODE', 'off').strip().lower()
@@ -57,6 +59,9 @@ def main():
     if mode == 'mock':
         from apscheduler.schedulers.blocking import BlockingScheduler
 
+        if args.backfill_hours > 0:
+            collect_mock_backfill(args.backfill_hours, args.backfill_interval_minutes)
+            return
         if args.once:
             collect_mock_once()
             return

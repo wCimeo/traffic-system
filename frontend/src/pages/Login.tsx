@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { AlertTriangle, ArrowRight, Brain, Lock, Map, MessageSquareText, Navigation, Phone, Radio, RefreshCw, ShieldCheck, User, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Brain, Lock, Map, Navigation, Phone, RefreshCw, User } from 'lucide-react';
 import api from '../api';
 import { useToast } from '../components/ToastProvider';
 import trafficIcon from '../assets/traffic.png';
