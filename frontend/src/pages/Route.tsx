@@ -55,8 +55,8 @@ const levelStyle = (level: RouteLevel) =>
   level === 'good'
     ? { text: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', bar: 'bg-emerald-500' }
     : level === 'bad'
-    ? { text: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200', bar: 'bg-red-500' }
-    : { text: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', bar: 'bg-amber-500' };
+      ? { text: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200', bar: 'bg-red-500' }
+      : { text: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', bar: 'bg-amber-500' };
 
 const statusText = (status: number | null) => {
   if (status === 1) return '畅通';
@@ -218,8 +218,8 @@ export default function RoutePage() {
             </div>
 
             <div>
-              <label className="text-xs font-bold text-slate-500">预测时域</label>
-              <div className="mt-3 grid grid-cols-3 gap-2">
+              <label className="text-xs font-bold text-slate-500">预测时段</label>
+              <div className="mt-3 grid grid-cols-4 gap-2">
                 {HORIZONS.map((horizon) => {
                   const active = selectedHorizons.includes(horizon);
                   return (
@@ -247,8 +247,31 @@ export default function RoutePage() {
           </div>
           <div className="text-4xl font-black text-slate-900">{averageScore || '--'}</div>
           <div className="mt-2 text-sm font-bold text-slate-500">平均通行评分</div>
-          <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm font-bold text-slate-600">
-            推荐优先：{bestOption ? `${bestOption.nodeId} · ${nodeNameMap[bestOption.nodeId]}` : '--'}
+          {groupedByNode.length >= 3 ? (
+            <div className="mt-5 space-y-2">
+              {[
+                { rank: '1', label: '优先推荐', node: groupedByNode[0], color: 'text-emerald-600' },
+                { rank: '2', label: '次级推荐', node: groupedByNode[1], color: 'text-brand-600' },
+                { rank: '3', label: '可作备选', node: groupedByNode[2], color: 'text-amber-600' },
+              ].map((item) => (
+                <div key={item.rank} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-black ${item.color}`}>{item.label}</span>
+                    <span className="text-sm font-bold text-slate-700">{item.node.nodeId}</span>
+                    <span className="text-sm text-slate-500">· {nodeNameMap[item.node.nodeId]}</span>
+                  </div>
+                  <span className="text-sm font-black text-slate-400">{item.node.bestScore}分</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm font-bold text-slate-600">
+              推荐优先：{bestOption ? `${bestOption.nodeId} · ${nodeNameMap[bestOption.nodeId]}` : '--'}
+            </div>
+          )}
+          <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">
+            <span className="font-black text-slate-700">评分说明：</span>
+            score 主要看两件事：未来预测速度够不够高，以及相对当前速度有没有明显下滑。未来速度越低、下滑越明显，扣分越多；如果未来速度高且变化平稳，就会接近高分。
           </div>
         </div>
       </div>

@@ -123,16 +123,32 @@ function clamp(value: number, min: number, max: number) {
 function buildRouteAdvice(currentSpeed: number | null, predictedSpeed: number, horizon: number) {
   const delta = currentSpeed === null ? null : Number((predictedSpeed - currentSpeed).toFixed(2));
   const decline = delta === null ? 0 : Math.max(0, -delta);
-  const lowSpeedPenalty = predictedSpeed < 25 ? 42 : predictedSpeed < 35 ? 22 : predictedSpeed < 40 ? 10 : 0;
-  const declinePenalty = decline >= 12 ? 28 : decline >= 8 ? 18 : decline >= 5 ? 10 : 0;
-  const score = Math.round(clamp(100 - lowSpeedPenalty - declinePenalty, 0, 100));
+  const speedDeficit = Math.max(0, 48 - predictedSpeed);
+  const lowSpeedPenalty =
+    predictedSpeed < 25
+      ? speedDeficit * 1.95
+      : predictedSpeed < 35
+      ? speedDeficit * 1.2
+      : predictedSpeed < 40
+      ? speedDeficit * 0.7
+      : speedDeficit * 0.28;
+  const declinePenalty =
+    decline === 0
+      ? 0
+      : decline >= 10
+      ? decline * 1.9
+      : decline >= 5
+      ? decline * 1.35
+      : decline * 0.75;
+  const horizonPenalty = Math.max(0, horizon - 15) * 0.16;
+  const score = Math.round(clamp(100 - lowSpeedPenalty - declinePenalty - horizonPenalty, 0, 100));
 
   let level: 'good' | 'normal' | 'bad' = 'good';
   let recommendation = '建议通行';
   if (score < 55 || predictedSpeed < 25) {
     level = 'bad';
     recommendation = '建议绕行';
-  } else if (score < 76 || predictedSpeed < 35 || decline >= 8) {
+  } else if (score < 78 || predictedSpeed < 35 || decline >= 7) {
     level = 'normal';
     recommendation = '谨慎通行';
   }

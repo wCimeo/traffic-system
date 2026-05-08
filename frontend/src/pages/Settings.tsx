@@ -24,6 +24,7 @@ import { useToast } from '../components/ToastProvider';
 
 type SettingsSection = 'overview' | 'password' | 'archive' | 'docs';
 type ThemeMode = 'light' | 'dark' | 'system';
+
 type CurrentUser = {
   id?: number;
   username?: string | null;
@@ -34,6 +35,7 @@ type CurrentUser = {
   lastLoginTime?: string | null;
   lastLoginIp?: string | null;
 };
+
 type ExportRecord = {
   id: string;
   type: string;
@@ -101,6 +103,10 @@ function formatLoginIp(value?: string | null) {
   const ip = value.trim();
   if (ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1') return '192.168.1.159';
   return ip;
+}
+
+function formatPhoneStatus(phone?: string | null) {
+  return phone ? '已绑定' : '未绑定';
 }
 
 export default function Settings() {
@@ -223,7 +229,7 @@ export default function Settings() {
       setProfileMsg({ text: '用户信息已保存', ok: true });
       showToast('用户信息已保存', 'success');
     } catch (err: any) {
-      const msg = err.response?.data?.error || '用户信息保存失败，请重试';
+      const msg = err.response?.data?.error || '用户信息保存失败，请稍后重试';
       setProfileMsg({ text: msg, ok: false });
       showToast(msg, 'error');
     } finally {
@@ -293,11 +299,12 @@ export default function Settings() {
         newPassword: pwForm.newPassword,
       });
       saveUserToLocal(res.data.user);
-      setPwMsg({ text: user.isPasswordSet ? '密码修改成功' : '密码设置成功', ok: true });
-      showToast(user.isPasswordSet ? '密码修改成功' : '密码设置成功', 'success');
+      const successText = user.isPasswordSet ? '密码修改成功' : '密码设置成功';
+      setPwMsg({ text: successText, ok: true });
+      showToast(successText, 'success');
       setPwForm({ oldPassword: '', newPassword: '', confirm: '' });
     } catch (err: any) {
-      const msg = err.response?.data?.error || '密码更新失败，请重试';
+      const msg = err.response?.data?.error || '密码更新失败，请稍后重试';
       setPwMsg({ text: msg, ok: false });
       showToast(msg, 'error');
     } finally {
@@ -315,10 +322,8 @@ export default function Settings() {
     try {
       const res = await api.post('/api/auth/sms/send-profile', { phone });
       setPhoneCountdown(60);
-      const devCode = res.data?.devCode ? `（模拟码：${res.data.devCode}）` : '';
-      showToast(`【手机号验证】验证码已发送（60秒内有效）${devCode}`, 'success');
-      return;
-      showToast('【手机号验证】验证码已发送（60秒内有效）', 'success');
+      const devCode = res.data?.devCode ? `（开发验证码：${res.data.devCode}）` : '';
+      showToast(`【手机号验证】验证码已发送，60 秒内有效${devCode}`, 'success');
     } catch (err: any) {
       showToast(`【手机号验证】${err.response?.data?.error || '发送失败'}`, 'error');
     } finally {
@@ -361,12 +366,12 @@ export default function Settings() {
     const range = startDate || endDate ? `${startDate || '开始不限'} ~ ${endDate || '结束不限'}` : '全部历史时间';
 
     setExportHistory((curr) => [
-      { id: `${Date.now()}`, type: '历史 数据 导出', time: new Date().toLocaleString('zh-CN'), scope, range },
+      { id: `${Date.now()}`, type: '历史数据导出', time: new Date().toLocaleString('zh-CN'), scope, range },
       ...curr,
     ].slice(0, 10));
 
     window.open(`http://localhost:3001/api/report/export?${params.toString()}&token=${token}`);
-    showToast('历史 数据 导出已开始', 'success');
+    showToast('历史数据导出已开始', 'success');
   };
 
   const handlePredictExport = () => {
@@ -376,7 +381,7 @@ export default function Settings() {
     const scope = nodeId === 'all' ? '全部路口' : `路口 ${nodeId}`;
 
     setExportHistory((curr) => [
-      { id: `${Date.now()}`, type: '预测数据导出', time: new Date().toLocaleString('zh-CN'), scope, range: '当前数据窗口 + 15/30 分钟预测' },
+      { id: `${Date.now()}`, type: '预测数据导出', time: new Date().toLocaleString('zh-CN'), scope, range: '当前数据窗口 + 15/30/45/60 分钟预测' },
       ...curr,
     ].slice(0, 10));
 
@@ -392,14 +397,13 @@ export default function Settings() {
   ];
 
   const themeOptions: Array<{ key: ThemeMode; label: string; desc: string; icon: typeof Sun }> = [
-    { key: 'light', label: '浅色', desc: '保持明亮控制台风格', icon: Sun },
-    { key: 'dark', label: '深色', desc: '切换为低亮度深色界面', icon: Moon },
-    { key: 'system', label: '跟随系统', desc: '自动匹配系统主题', icon: Laptop },
+    { key: 'light', label: '浅色', desc: '保持明亮、清晰的控制台风格。', icon: Sun },
+    { key: 'dark', label: '深色', desc: '切换到低亮度深色界面。', icon: Moon },
+    { key: 'system', label: '跟随系统', desc: '自动匹配系统主题偏好。', icon: Laptop },
   ];
 
   return (
     <div className="space-y-10 pb-12">
-      
       <div className="space-y-6">
         <section className="console-card bg-white p-5">
           <div className="grid grid-cols-1 gap-3 px-3 pb-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -452,14 +456,15 @@ export default function Settings() {
                         <button
                           type="button"
                           onClick={handleAvatarPick}
-                          className="absolute -bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-slate-900 px-3 py-1 text-[8px] font-bold text-white">
+                          className="absolute -bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-slate-900 px-3 py-1 text-[8px] font-bold text-white"
+                        >
                           更换
                         </button>
                         <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFileChange} />
                       </div>
                       <div className="flex flex-col gap-4">
                         <div className="text-4xl font-black text-slate-900">{displayName.toUpperCase()}</div>
-                        <div className="text-sm text-slate-500">上次登录时间：{formatDateTime(user.lastLoginTime)}（7天有效）</div>
+                        <div className="text-sm text-slate-500">上次登录时间：{formatDateTime(user.lastLoginTime)}</div>
                       </div>
                     </div>
                     <button
@@ -489,7 +494,7 @@ export default function Settings() {
                         )}
                       </div>
                     </div>
-                    
+
                     <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
                       <div className="border-b border-slate-100 px-6 py-5 text-sm font-black text-slate-500 md:border-b-0">密码</div>
                       <div className="border-b border-slate-100 px-6 py-5">
@@ -500,7 +505,7 @@ export default function Settings() {
                     <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
                       <div className="border-b border-slate-100 px-6 py-5 text-sm font-black text-slate-500 md:border-b-0">手机号</div>
                       <div className="border-b border-slate-100 px-6 py-5">
-                        <span className="text-sm font-black text-slate-900">{user.phone ? '已绑定' : '未绑定'}</span>
+                        <span className="text-sm font-black text-slate-900">{formatPhoneStatus(user.phone)}</span>
                       </div>
                     </div>
 
@@ -574,85 +579,83 @@ export default function Settings() {
                     })}
                   </div>
                 </div>
-
-                
               </motion.div>
             )}
 
             {activeSection === 'password' && (
               <motion.div key="password" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
                 <div className="console-card bg-white p-8">
-                <div className="mb-8 flex items-center gap-3">
-                  <div className={`flex h-11 w-11 items-center justify-center rounded-2xl text-white ${user.isPasswordSet ? 'bg-slate-900' : 'bg-amber-500'}`}>
-                    <Lock className="h-5 w-5" />
+                  <div className="mb-8 flex items-center gap-3">
+                    <div className={`flex h-11 w-11 items-center justify-center rounded-2xl text-white ${user.isPasswordSet ? 'bg-slate-900' : 'bg-amber-500'}`}>
+                      <Lock className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900">{user.isPasswordSet ? '修改密码' : '设置密码'}</h3>
+                      <p className="text-sm text-slate-500">{user.isPasswordSet ? '更新当前账号的登录密码。' : '先设置密码，再启用账号密码登录。'}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-lg font-black text-slate-900">{user.isPasswordSet ? '修改密码' : '设置密码'}</h3>
-                    <p className="text-sm text-slate-500">{user.isPasswordSet ? '更新当前账号的登录密码。' : '请先设置密码，启用账号密码登录。'}</p>
-                  </div>
-                </div>
 
-                {!user.isPasswordSet && (
-                  <div className="mb-6 rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-800">
-                    当前账号通过手机验证码注册，尚未设置密码。
-                  </div>
-                )}
+                  {!user.isPasswordSet && (
+                    <div className="mb-6 rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-800">
+                      当前账号通过手机验证码注册，尚未设置密码。
+                    </div>
+                  )}
 
-                <div className="space-y-5">
-                  {user.isPasswordSet && (
+                  <div className="space-y-5">
+                    {user.isPasswordSet && (
+                      <div className="space-y-2">
+                        <label className="ml-1 text-[11px] font-bold text-slate-500">当前密码</label>
+                        <input
+                          type="password"
+                          className="input-base bg-white ring-1 ring-slate-100"
+                          placeholder="请输入当前密码"
+                          value={pwForm.oldPassword}
+                          onChange={(e) => setPwForm((curr) => ({ ...curr, oldPassword: e.target.value }))}
+                        />
+                      </div>
+                    )}
                     <div className="space-y-2">
-                      <label className="ml-1 text-[11px] font-bold text-slate-500">当前密码</label>
+                      <label className="ml-1 text-[11px] font-bold text-slate-500">新密码</label>
                       <input
                         type="password"
                         className="input-base bg-white ring-1 ring-slate-100"
-                        placeholder="请输入当前密码"
-                        value={pwForm.oldPassword}
-                        onChange={(e) => setPwForm((curr) => ({ ...curr, oldPassword: e.target.value }))}
+                        placeholder="请输入至少 6 位新密码"
+                        value={pwForm.newPassword}
+                        onChange={(e) => setPwForm((curr) => ({ ...curr, newPassword: e.target.value }))}
                       />
                     </div>
-                  )}
-                  <div className="space-y-2">
-                    <label className="ml-1 text-[11px] font-bold text-slate-500">新密码</label>
-                    <input
-                      type="password"
-                      className="input-base bg-white ring-1 ring-slate-100"
-                      placeholder="请输入至少 6 位新密码"
-                      value={pwForm.newPassword}
-                      onChange={(e) => setPwForm((curr) => ({ ...curr, newPassword: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="ml-1 text-[11px] font-bold text-slate-500">确认新密码</label>
-                    <input
-                      type="password"
-                      className="input-base bg-white ring-1 ring-slate-100"
-                      placeholder="请再次输入新密码"
-                      value={pwForm.confirm}
-                      onChange={(e) => setPwForm((curr) => ({ ...curr, confirm: e.target.value }))}
-                    />
-                  </div>
+                    <div className="space-y-2">
+                      <label className="ml-1 text-[11px] font-bold text-slate-500">确认新密码</label>
+                      <input
+                        type="password"
+                        className="input-base bg-white ring-1 ring-slate-100"
+                        placeholder="请再次输入新密码"
+                        value={pwForm.confirm}
+                        onChange={(e) => setPwForm((curr) => ({ ...curr, confirm: e.target.value }))}
+                      />
+                    </div>
 
-                  <AnimatePresence>
-                    {pwMsg && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -8 }}
-                        className={`flex items-center gap-3 rounded-2xl border px-4 py-4 text-sm font-semibold ${
-                          pwMsg.ok ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-red-100 bg-red-50 text-red-600'
-                        }`}
-                      >
-                        {pwMsg.ok ? <Check className="h-4 w-4" /> : <div className="h-2 w-2 rounded-full bg-red-500" />}
-                        <span>{pwMsg.text}</span>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                    <AnimatePresence>
+                      {pwMsg && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -8 }}
+                          className={`flex items-center gap-3 rounded-2xl border px-4 py-4 text-sm font-semibold ${
+                            pwMsg.ok ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-red-100 bg-red-50 text-red-600'
+                          }`}
+                        >
+                          {pwMsg.ok ? <Check className="h-4 w-4" /> : <div className="h-2 w-2 rounded-full bg-red-500" />}
+                          <span>{pwMsg.text}</span>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
 
-                  <button onClick={handleChangePassword} disabled={pwLoading} className="btn-primary h-12 w-full gap-2">
-                    <span>{pwLoading ? '正在更新密码...' : user.isPasswordSet ? '确认修改密码' : '确认设置密码'}</span>
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
+                    <button onClick={handleChangePassword} disabled={pwLoading} className="btn-primary h-12 w-full gap-2">
+                      <span>{pwLoading ? '正在更新密码...' : user.isPasswordSet ? '确认修改密码' : '确认设置密码'}</span>
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="console-card bg-white p-8">
@@ -667,7 +670,7 @@ export default function Settings() {
                   </div>
 
                   <div className="space-y-5">
-                    <div className="text-sm font-black text-slate-900">{user.phone ? '已设置' : '未设置'}</div>
+                    <div className="text-sm font-black text-slate-900">{formatPhoneStatus(user.phone)}</div>
                     <div className="flex gap-2">
                       <input
                         className="input-base h-10 flex-1 bg-white ring-1 ring-slate-100"
@@ -695,7 +698,7 @@ export default function Settings() {
                         placeholder="输入短信验证码"
                       />
                       <button type="button" onClick={handleVerifyPhone} className="h-10 rounded-lg bg-slate-900 px-3 text-xs font-bold text-white">
-                        验证是否通过
+                        验证并绑定
                       </button>
                     </div>
                     <div className={`text-xs font-bold ${phoneVerified ? 'text-emerald-600' : 'text-slate-400'}`}>
@@ -738,16 +741,16 @@ export default function Settings() {
                   </div>
                 </div>
 
-                  <div className="mt-5 flex flex-wrap gap-3 justify-end">     
-                    <button onClick={handleExport} className="btn-primary gap-2">
-                      <Download className="h-4 w-4" />
-                      <span>导出历史数据</span>
-                    </button>
-                    <button onClick={handlePredictExport} className="btn-primary gap-2">
-                      <FileArchive className="h-4 w-4" />
-                      <span>导出预测数据</span>
-                    </button>
-                  </div>
+                <div className="mt-5 flex flex-wrap justify-end gap-3">
+                  <button onClick={handleExport} className="btn-primary gap-2">
+                    <Download className="h-4 w-4" />
+                    <span>导出历史数据</span>
+                  </button>
+                  <button onClick={handlePredictExport} className="btn-primary gap-2">
+                    <FileArchive className="h-4 w-4" />
+                    <span>导出预测数据</span>
+                  </button>
+                </div>
 
                 <div className="mt-6 rounded-[28px] bg-slate-50 p-6 ring-1 ring-slate-100">
                   <div className="mb-4 text-base font-black text-slate-900">最近导出记录</div>
@@ -760,7 +763,7 @@ export default function Settings() {
                             <div className="text-xs font-semibold text-slate-400">{record.time}</div>
                           </div>
                           <div className="mt-2 text-xs font-medium text-slate-500">范围：{record.range}</div>
-                          <div className="mt-1 text-xs font-medium text-slate-500">目标：{record.scope}</div>
+                          <div className="mt-1 text-xs font-medium text-slate-500">对象：{record.scope}</div>
                         </div>
                       ))
                     ) : (
@@ -782,16 +785,15 @@ export default function Settings() {
                     </div>
                     <div>
                       <h3 className="text-lg font-black text-slate-900">功能一览</h3>
-                      <p className="text-sm text-slate-500">面向日常运维、数据检查和展示汇报的统一口径。</p>
+                      <p className="text-sm text-slate-500">面向日常运维、数据检查和展示汇报的统一入口。</p>
                     </div>
                   </div>
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                     {[
-                      
-                      { title: '监测总览面板', text: '汇总采集数据、平均速度、拥堵节点数与预测服务状态。' },
+                      { title: '监测总览面板', text: '汇总采集数据、平均速度、拥堵节点数量与预测服务状态。' },
                       { title: '实时路网地图', text: '展示核心路口速度与拥堵状态，支持列表与地图联动。' },
                       { title: '突发事件监控', text: '实时监控并预警交通突发事件。' },
-                      { title: '智能路线推荐', text: '基于路况数据，提供智能路线推荐。' },
+                      { title: '智能路线推荐', text: '基于路况数据，为出行决策提供推荐参考。' },
                     ].map((item) => (
                       <div key={item.title} className="rounded-[24px] border border-slate-100 bg-slate-50 p-5">
                         <div className="text-sm font-black text-slate-900">{item.title}</div>
@@ -808,15 +810,15 @@ export default function Settings() {
                     </div>
                     <div>
                       <h3 className="text-lg font-black text-slate-900">术语解释</h3>
-                      <p className="text-sm text-slate-500">帮助团队统一“速度、状态、预测”这些核心指标。</p>
+                      <p className="text-sm text-slate-500">帮助团队统一理解速度、状态、预测等核心指标。</p>
                     </div>
                   </div>
                   <div className="space-y-2">
                     {[
                       { term: '节点', desc: '系统监控的单个核心路口，例如 A1、B2。' },
-                      { term: '通行速度', desc: '来源于路况接口或历史记录，单位 km/h。' },
+                      { term: '通行速度', desc: '来源于路况接口或历史记录，单位为 km/h。' },
                       { term: '拥堵状态', desc: '路况等级字段，通常包含畅通、缓行、拥堵、严重拥堵。' },
-                      { term: '预测报表', desc: '基于当前窗口生成的 15/30 分钟速度趋势。' },
+                      { term: '预测报表', desc: '基于当前数据窗口生成的 15/30/45/60 分钟速度趋势。' },
                     ].map((item) => (
                       <div key={item.term} className="flex flex-col gap-2 border-b border-slate-50 py-4 last:border-b-0 md:flex-row md:justify-between">
                         <div className="text-sm font-black text-slate-900">{item.term}</div>
@@ -833,18 +835,18 @@ export default function Settings() {
                     </div>
                     <div>
                       <h3 className="text-lg font-black text-slate-900">路线评分规则</h3>
-                      <p className="text-sm text-slate-500">说明智能路线推荐页面中的 score 如何根据预测速度和速度变化进行计算。</p>
+                      <p className="text-sm text-slate-500">说明智能路线推荐页面中的 score 是如何根据预测速度和速度变化计算的。</p>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
                     {[
-                      { title: '基础公式', text: 'score = 100 - 低速惩罚 - 下滑惩罚，最终结果会限制在 0 到 100 分之间。' },
-                      { title: '低速惩罚', text: '预测速度 < 25 km/h 扣 42 分；< 35 km/h 扣 22 分；< 40 km/h 扣 10 分；其余不扣分。' },
-                      { title: '下滑惩罚', text: '若预测速度较当前速度下降 >= 12 km/h 扣 28 分；>= 8 km/h 扣 18 分；>= 5 km/h 扣 10 分。' },
-                      { title: '等级划分', text: 'score < 55 或预测速度 < 25 km/h 判为 bad；score < 76、预测速度 < 35 km/h 或下降 >= 8 km/h 判为 normal；其余为 good。' },
-                      { title: '推荐文案', text: 'good 对应“建议通行”，normal 对应“谨慎通行”，bad 对应“建议绕行”。' },
-                      { title: '前端兜底', text: '正常情况下 score 由后端返回；只有后端未返回时，前端才会按等级和速度使用固定分数兜底显示。' },
+                      { title: '看未来速度', text: '评分首先看预测时段内的未来速度。预测速度越低，说明未来通行能力越弱，扣分越多。' },
+                      { title: '看是否变慢', text: '系统还会比较预测速度和当前速度。如果未来明显比现在更慢，也会继续扣分。' },
+                      { title: '为什么高分扎堆', text: '旧规则更像整档扣分，所以分数容易集中在 90 或 100。现在已经改成连续扣分，分值会更自然。' },
+                      { title: '等级判断', text: '未来速度很低，或者总分已经落到较低区间时，会判为 bad；中间状态判为 normal；速度稳定且整体较好时判为 good。' },
+                      { title: '页面文案', text: 'good 对应“建议通行”，normal 对应“谨慎通行”，bad 对应“建议绕行”。这是对 score 的业务化解释。' },
+                      { title: '实现口径', text: '正常情况下 score 由后端统一计算后返回前端展示，前端只负责渲染；只有接口字段缺失时才会启用兜底分数。' },
                     ].map((item) => (
                       <div key={item.title} className="rounded-[24px] border border-slate-100 bg-slate-50 p-5">
                         <div className="text-sm font-black text-slate-900">{item.title}</div>
@@ -856,8 +858,8 @@ export default function Settings() {
                   <div className="mt-6 rounded-[24px] bg-slate-50 px-5 py-4 ring-1 ring-slate-100">
                     <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">示例理解</div>
                     <p className="mt-2 text-sm leading-6 text-slate-500">
-                      如果某路口当前速度为 42 km/h，而 15 分钟后的预测速度为 28 km/h，那么系统会同时触发低速惩罚与速度下滑惩罚，
-                      score 会明显下降，并更倾向给出“谨慎通行”或“建议绕行”的提示。
+                      例如某路口当前速度为 42 km/h，而 15 分钟后的预测速度只有 28 km/h，系统会认为“未来速度偏低”且“比当前明显变慢”，
+                      因此 score 会被连续扣低，更可能给出“谨慎通行”或“建议绕行”。
                     </p>
                   </div>
                 </div>
@@ -876,7 +878,7 @@ export default function Settings() {
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
                     {[
                       { title: '基本关系', text: '流量 q = 速度 v × 密度 k。密度上升通常会压低车速。' },
-                      { title: '线性假设', text: 'Greenshields: v = vf × (1 - k / kj)，vf 为自由流速度，kj 为阻塞密度。' },
+                      { title: '线性假设', text: 'Greenshields 模型近似为 v = vf × (1 - k / kj)，vf 为自由流速度，kj 为阻塞密度。' },
                       { title: '拥堵判断', text: '当密度超过临界值后，速度与通行能力会同步下降，排队风险增大。' },
                       { title: '状态来源', text: 'congestion_status 来自路况接口返回字段，不由前端主观定义。' },
                       { title: 'road_count 含义', text: '表示采集覆盖范围内的路段数量，用于描述样本代表性。' },
@@ -892,8 +894,8 @@ export default function Settings() {
                   <div className="mt-6 rounded-[24px] bg-slate-50 px-5 py-4 ring-1 ring-slate-100">
                     <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">应用口径</div>
                     <p className="mt-2 text-sm leading-6 text-slate-500">
-                      当前系统以路口平均速度和拥堵状态作为核心指标。速度下降通常对应密度升高与拥堵加重，
-                      因此在模型推理与业务展示中，使用“速度”作为交通状态代理变量是合理且一致的。
+                      当前系统以路口平均速度和拥堵状态作为核心指标。速度下降通常对应密度升高与拥堵加重，因此在模型推理与业务展示中，
+                      使用“速度”作为交通状态代理变量是合理且一致的。
                     </p>
                   </div>
                 </div>

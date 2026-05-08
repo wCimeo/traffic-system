@@ -475,7 +475,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="grid min-h-[620px] grid-cols-1 xl:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="grid min-h-[620px] grid-cols-1 xl:grid-cols-[minmax(0,1fr)_145px]">
           <div className="min-h-0 p-5 xl:border-r xl:border-slate-100">
             <ResponsiveContainer width="100%" height="100%" minHeight={380}>
               <ComposedChart data={chartPoints} margin={{ top: 18, right: 28, bottom: 28, left: 0 }}>
@@ -558,13 +558,13 @@ export default function Dashboard() {
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-          <div className="border-t border-slate-100 p-4 xl:border-t-0">
+          <div className="border-t border-slate-100 p-3 xl:border-t-0">
             <div className="mb-3 text-xs font-black uppercase tracking-widest text-slate-400">Peak Focus</div>
-            <div className="space-y-2">
+            <div className="flex flex-col items-start gap-2">
               <button
                 type="button"
                 onClick={restoreFullDay}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-sm font-black text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                className="w-2/3 min-w-[104px] rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-sm font-black text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
               >
                 全天
               </button>
@@ -573,7 +573,7 @@ export default function Dashboard() {
                   key={peak.label}
                   type="button"
                   onClick={() => focusRange(peak.start, peak.end)}
-                  className="w-full rounded-xl border px-3 py-3 text-left text-sm font-black text-slate-700 transition hover:brightness-95"
+                  className="w-2/3 min-w-[104px] rounded-xl border px-3 py-3 text-left text-sm font-black text-slate-700 transition hover:brightness-95"
                   style={{ backgroundColor: `${peak.color}12`, borderColor: `${peak.color}44` }}
                 >
                   <div style={{ color: peak.color }}>{peak.label}</div>
@@ -582,9 +582,6 @@ export default function Dashboard() {
                   </div>
                 </button>
               ))}
-            </div>
-            <div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs font-semibold leading-relaxed text-slate-500">
-              点击后会把图表快速聚焦到对应高峰时段。
             </div>
           </div>
         </div>
