@@ -14,6 +14,7 @@ import {
   MessageSquareText,
   Monitor,
   Moon,
+  Navigation,
   ShieldCheck,
   Sun,
   User,
@@ -292,8 +293,8 @@ export default function Settings() {
         newPassword: pwForm.newPassword,
       });
       saveUserToLocal(res.data.user);
-      setPwMsg({ text: user.isPasswordSet ? '密码修改成功' : '登录密码设置成功', ok: true });
-      showToast(user.isPasswordSet ? '密码修改成功' : '登录密码设置成功', 'success');
+      setPwMsg({ text: user.isPasswordSet ? '密码修改成功' : '密码设置成功', ok: true });
+      showToast(user.isPasswordSet ? '密码修改成功' : '密码设置成功', 'success');
       setPwForm({ oldPassword: '', newPassword: '', confirm: '' });
     } catch (err: any) {
       const msg = err.response?.data?.error || '密码更新失败，请重试';
@@ -586,14 +587,14 @@ export default function Settings() {
                     <Lock className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-black text-slate-900">{user.isPasswordSet ? '修改密码' : '设置登录密码'}</h3>
-                    <p className="text-sm text-slate-500">{user.isPasswordSet ? '更新当前账号的登录密码。' : '请先设置登录密码，启用账号密码登录。'}</p>
+                    <h3 className="text-lg font-black text-slate-900">{user.isPasswordSet ? '修改密码' : '设置密码'}</h3>
+                    <p className="text-sm text-slate-500">{user.isPasswordSet ? '更新当前账号的登录密码。' : '请先设置密码，启用账号密码登录。'}</p>
                   </div>
                 </div>
 
                 {!user.isPasswordSet && (
                   <div className="mb-6 rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-800">
-                    当前账号通过手机验证码注册，尚未设置登录密码。
+                    当前账号通过手机验证码注册，尚未设置密码。
                   </div>
                 )}
 
@@ -822,6 +823,42 @@ export default function Settings() {
                         <div className="max-w-3xl text-sm leading-6 text-slate-500">{item.desc}</div>
                       </div>
                     ))}
+                  </div>
+                </div>
+
+                <div className="console-card bg-white p-8">
+                  <div className="mb-8 flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
+                      <Navigation className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900">路线评分规则</h3>
+                      <p className="text-sm text-slate-500">说明智能路线推荐页面中的 score 如何根据预测速度和速度变化进行计算。</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                    {[
+                      { title: '基础公式', text: 'score = 100 - 低速惩罚 - 下滑惩罚，最终结果会限制在 0 到 100 分之间。' },
+                      { title: '低速惩罚', text: '预测速度 < 25 km/h 扣 42 分；< 35 km/h 扣 22 分；< 40 km/h 扣 10 分；其余不扣分。' },
+                      { title: '下滑惩罚', text: '若预测速度较当前速度下降 >= 12 km/h 扣 28 分；>= 8 km/h 扣 18 分；>= 5 km/h 扣 10 分。' },
+                      { title: '等级划分', text: 'score < 55 或预测速度 < 25 km/h 判为 bad；score < 76、预测速度 < 35 km/h 或下降 >= 8 km/h 判为 normal；其余为 good。' },
+                      { title: '推荐文案', text: 'good 对应“建议通行”，normal 对应“谨慎通行”，bad 对应“建议绕行”。' },
+                      { title: '前端兜底', text: '正常情况下 score 由后端返回；只有后端未返回时，前端才会按等级和速度使用固定分数兜底显示。' },
+                    ].map((item) => (
+                      <div key={item.title} className="rounded-[24px] border border-slate-100 bg-slate-50 p-5">
+                        <div className="text-sm font-black text-slate-900">{item.title}</div>
+                        <p className="mt-2 text-xs leading-5 text-slate-500">{item.text}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-6 rounded-[24px] bg-slate-50 px-5 py-4 ring-1 ring-slate-100">
+                    <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">示例理解</div>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">
+                      如果某路口当前速度为 42 km/h，而 15 分钟后的预测速度为 28 km/h，那么系统会同时触发低速惩罚与速度下滑惩罚，
+                      score 会明显下降，并更倾向给出“谨慎通行”或“建议绕行”的提示。
+                    </p>
                   </div>
                 </div>
 

@@ -28,7 +28,9 @@ const NODE_OPTIONS = [
   { id: 'K11', name: '人民南路四段' },
 ];
 
-const HORIZONS = [30, 45, 60] as const;
+const HORIZONS = [15, 30, 45, 60] as const;
+const DEFAULT_SELECTED_NODES = ['A1'];
+const DEFAULT_SELECTED_HORIZONS = [15];
 
 type RouteLevel = 'good' | 'normal' | 'bad';
 
@@ -62,6 +64,14 @@ const statusText = (status: number | null) => {
   if (status === 3) return '拥堵';
   if (status === 4) return '严重拥堵';
   return '未知';
+};
+
+const statusColor = (status: number | null) => {
+  if (status === 1) return 'text-emerald-600';
+  if (status === 2) return 'text-amber-500';
+  if (status === 3) return 'text-red-500';
+  if (status === 4) return 'text-red-700';
+  return 'text-slate-900';
 };
 
 const formatTime = (value: string | null) => {
@@ -105,8 +115,8 @@ const normalizeOutlookItem = (raw: any): RouteOutlookItem => {
 
 export default function RoutePage() {
   const { showToast } = useToast();
-  const [selectedNodes, setSelectedNodes] = useState<string[]>(['A1', 'B2', 'C3']);
-  const [selectedHorizons, setSelectedHorizons] = useState<number[]>([30, 45, 60]);
+  const [selectedNodes, setSelectedNodes] = useState<string[]>(DEFAULT_SELECTED_NODES);
+  const [selectedHorizons, setSelectedHorizons] = useState<number[]>(DEFAULT_SELECTED_HORIZONS);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<RouteOutlookItem[]>([]);
   const [error, setError] = useState('');
@@ -147,8 +157,8 @@ export default function RoutePage() {
   };
 
   const resetSelection = () => {
-    setSelectedNodes(['A1', 'B2', 'C3']);
-    setSelectedHorizons([30, 45, 60]);
+    setSelectedNodes(DEFAULT_SELECTED_NODES);
+    setSelectedHorizons(DEFAULT_SELECTED_HORIZONS);
   };
 
   const loadOutlook = async (silent = false) => {
@@ -255,7 +265,7 @@ export default function RoutePage() {
 
       {error && <div className="console-card p-4 text-sm font-bold text-red-600">{error}</div>}
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         {groupedByNode.map((group) => {
           const primary = group.items[0];
           const primaryStyle = levelStyle(primary.level);
@@ -271,24 +281,20 @@ export default function RoutePage() {
                   </div>
                   <div className="mt-1 text-sm font-bold text-slate-500">{nodeNameMap[group.nodeId] || group.nodeId}</div>
                 </div>
-                <div className="text-right">
-                  <div className="text-3xl font-black text-slate-900">{group.bestScore}</div>
-                  <div className="text-xs font-bold uppercase text-slate-400">Score</div>
-                </div>
               </div>
 
               <div className="mb-5 grid grid-cols-2 gap-3">
                 <div className="rounded-xl bg-slate-50 p-4">
-                  <div className="text-xs font-black uppercase tracking-widest text-slate-400">当前速度</div>
-                  <div className="mt-2 text-2xl font-black text-slate-900">
+                  <div className="text-xs font-black uppercase tracking-widest text-slate-800">当前速度</div>
+                  <div className={`mt-2 text-2xl font-black ${statusColor(primary.current_status)}`}>
                     {primary.current_speed === null ? '--' : `${primary.current_speed.toFixed(1)} km/h`}
                   </div>
                   <div className="mt-1 text-xs font-bold text-slate-400">{statusText(primary.current_status)}</div>
                 </div>
                 <div className="rounded-xl bg-slate-50 p-4">
-                  <div className="text-xs font-black uppercase tracking-widest text-slate-400">数据时间</div>
-                  <div className="mt-2 text-sm font-black text-slate-700">{formatTime(primary.current_collected_at)}</div>
-                  <div className="mt-1 text-xs font-bold text-slate-400">数据源 {primary.source_table}</div>
+                  <div className="text-xs font-black uppercase tracking-widest text-slate-800">分数</div>
+                  <div className={`mt-2 text-2xl font-black ${primaryStyle.text}`}>{primary.score}</div>
+                  <span className="text-xs font-bold text-slate-400">{primary.recommendation}</span>
                 </div>
               </div>
 

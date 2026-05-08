@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Brush,
   CartesianGrid,
@@ -70,6 +70,13 @@ type ZoomRange = {
   endIndex: number;
 };
 
+type PeakWindow = {
+  label: string;
+  start: number;
+  end: number;
+  color: string;
+};
+
 const toDateInputValue = (date = new Date()) => {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, '0');
@@ -104,6 +111,11 @@ const formatDateTime = (value?: string | null) => {
     hour: '2-digit',
     minute: '2-digit',
   });
+};
+
+const formatPercent = (value?: number | null) => {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '--';
+  return `${value.toFixed(1)}%`;
 };
 
 const buildChartPoints = (actual: ActualSeriesItem[], predicted: PredictionSeriesItem[]) => {
@@ -299,6 +311,63 @@ export default function Dashboard() {
     return ticks.length ? ticks : [start, end];
   }, [xDomain]);
 
+  const visiblePeakWindows = useMemo<PeakWindow[]>(() => {
+    const [start, end] = xDomain;
+    return PEAK_WINDOWS
+      .map((peak) => ({
+        ...peak,
+        start: Math.max(start, peak.start),
+        end: Math.min(end, peak.end),
+      }))
+      .filter((peak) => peak.start < peak.end);
+  }, [xDomain]);
+
+  const latestActualPoint = useMemo(
+    () => [...chartPoints].reverse().find((point) => typeof point.actualSpeed === 'number'),
+    [chartPoints]
+  );
+
+  const latestPredictedPoint = useMemo(
+    () => [...chartPoints].reverse().find((point) => typeof point.predictedSpeed === 'number'),
+    [chartPoints]
+  );
+
+  const predictionAccuracy = useMemo(() => {
+    const comparable = chartPoints.filter(
+      (point): point is ChartPoint & { actualSpeed: number; predictedSpeed: number } =>
+        typeof point.actualSpeed === 'number' && typeof point.predictedSpeed === 'number'
+    );
+    if (!comparable.length) return { accuracy: null, mae: null, sampleCount: 0 };
+
+    const mae =
+      comparable.reduce((sum, point) => sum + Math.abs(point.actualSpeed - point.predictedSpeed), 0) / comparable.length;
+    const meanRelativeError =
+      comparable.reduce((sum, point) => sum + Math.abs(point.actualSpeed - point.predictedSpeed) / Math.max(point.actualSpeed, 1), 0) /
+      comparable.length;
+
+    return {
+      accuracy: Math.max(0, 100 - meanRelativeError * 100),
+      mae,
+      sampleCount: comparable.length,
+    };
+  }, [chartPoints]);
+
+  const focusRange = useCallback((startMinute: number, endMinute: number) => {
+    if (!chartPoints.length) return;
+    const startIndex = Math.max(
+      0,
+      chartPoints.findIndex((point) => point.minute >= Math.max(0, startMinute - FULL_DAY_STEP_MINUTES))
+    );
+    const rawEndIndex = chartPoints.findIndex((point) => point.minute >= Math.min(1440, endMinute + FULL_DAY_STEP_MINUTES));
+    const endIndex = rawEndIndex === -1 ? chartPoints.length - 1 : rawEndIndex;
+    setZoomRange({ startIndex, endIndex: Math.max(startIndex, endIndex) });
+  }, [chartPoints]);
+
+  const restoreFullDay = useCallback(() => {
+    if (!chartPoints.length) return;
+    setZoomRange({ startIndex: 0, endIndex: chartPoints.length - 1 });
+  }, [chartPoints]);
+
   const container = {
     hidden: { opacity: 0 },
     show: { opacity: 1, transition: { staggerChildren: 0.08 } },
@@ -386,7 +455,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="console-card flex h-[620px] min-w-0 flex-col">
+      <div className="console-card flex min-w-0 flex-col">
         <div className="flex flex-col gap-4 border-b border-slate-100 p-6 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h3 className="text-sm font-black uppercase tracking-widest text-slate-900">00:00-24:00 速度曲线</h3>
@@ -406,86 +475,118 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 p-5">
-          <ResponsiveContainer width="100%" height="100%" minHeight={380}>
-            <ComposedChart data={chartPoints} margin={{ top: 18, right: 28, bottom: 28, left: 0 }}>
-              <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#eef2f7" />
-              {PEAK_WINDOWS.map((peak) => (
-                <ReferenceArea
-                  key={peak.label}
-                  x1={peak.start}
-                  x2={peak.end}
-                  y1={0}
-                  y2={70}
-                  fill={peak.color}
-                  fillOpacity={0.07}
-                  strokeOpacity={0}
-                  label={{
-                    value: peak.label,
-                    fill: peak.color,
-                    fontSize: 11,
-                    fontWeight: 800,
-                    position: 'top',
-                  }}
+        <div className="grid min-h-[620px] grid-cols-1 xl:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="min-h-0 p-5 xl:border-r xl:border-slate-100">
+            <ResponsiveContainer width="100%" height="100%" minHeight={380}>
+              <ComposedChart data={chartPoints} margin={{ top: 18, right: 28, bottom: 28, left: 0 }}>
+                <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#eef2f7" />
+                {visiblePeakWindows.map((peak) => (
+                  <ReferenceArea
+                    key={peak.label}
+                    x1={peak.start}
+                    x2={peak.end}
+                    y1={yDomain[0]}
+                    y2={yDomain[1]}
+                    fill={peak.color}
+                    fillOpacity={0.09}
+                    strokeOpacity={0}
+                    ifOverflow="hidden"
+                    label={{
+                      value: peak.label,
+                      fill: peak.color,
+                      fontSize: 11,
+                      fontWeight: 800,
+                      position: 'top',
+                    }}
+                  />
+                ))}
+                <XAxis
+                  dataKey="minute"
+                  type="number"
+                  domain={xDomain}
+                  ticks={chartTicks}
+                  tickFormatter={minuteToLabel}
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
                 />
+                <YAxis
+                  domain={yDomain}
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
+                  unit=" km/h"
+                />
+                <Tooltip content={<ChartTooltip />} />
+                <Line
+                  name="真实采集曲线"
+                  type="natural"
+                  dataKey="actualSpeed"
+                  stroke="#10b981"
+                  strokeWidth={3}
+                  dot={false}
+                  activeDot={{ r: 4, strokeWidth: 0, fill: '#10b981' }}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+                <Line
+                  name="15分钟预测"
+                  type="natural"
+                  dataKey="predictedSpeed"
+                  stroke="#0284c7"
+                  strokeWidth={3}
+                  strokeDasharray="8 6"
+                  dot={false}
+                  activeDot={{ r: 4, strokeWidth: 0, fill: '#0284c7' }}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+                <Brush
+                  dataKey="time"
+                  startIndex={zoomRange.startIndex}
+                  endIndex={zoomRange.endIndex}
+                  onChange={(range) => {
+                    if (typeof range?.startIndex !== 'number' || typeof range?.endIndex !== 'number') return;
+                    setZoomRange({ startIndex: range.startIndex, endIndex: range.endIndex });
+                  }}
+                  height={34}
+                  travellerWidth={12}
+                  stroke="#0f766e"
+                  fill="#f8fafc"
+                  tickFormatter={(value) => String(value)}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="border-t border-slate-100 p-4 xl:border-t-0">
+            <div className="mb-3 text-xs font-black uppercase tracking-widest text-slate-400">Peak Focus</div>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={restoreFullDay}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-sm font-black text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+              >
+                全天
+              </button>
+              {PEAK_WINDOWS.map((peak) => (
+                <button
+                  key={peak.label}
+                  type="button"
+                  onClick={() => focusRange(peak.start, peak.end)}
+                  className="w-full rounded-xl border px-3 py-3 text-left text-sm font-black text-slate-700 transition hover:brightness-95"
+                  style={{ backgroundColor: `${peak.color}12`, borderColor: `${peak.color}44` }}
+                >
+                  <div style={{ color: peak.color }}>{peak.label}</div>
+                  <div className="mt-1 text-[11px] font-bold text-slate-500">
+                    {minuteToLabel(peak.start)}-{minuteToLabel(peak.end)}
+                  </div>
+                </button>
               ))}
-              <XAxis
-                dataKey="minute"
-                type="number"
-                domain={xDomain}
-                ticks={chartTicks}
-                tickFormatter={minuteToLabel}
-                axisLine={false}
-                tickLine={false}
-                tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
-              />
-              <YAxis
-                domain={yDomain}
-                axisLine={false}
-                tickLine={false}
-                tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
-                unit=" km/h"
-              />
-              <Tooltip content={<ChartTooltip />} />
-              <Line
-                name="真实采集曲线"
-                type="natural"
-                dataKey="actualSpeed"
-                stroke="#10b981"
-                strokeWidth={3}
-                dot={false}
-                activeDot={{ r: 4, strokeWidth: 0, fill: '#10b981' }}
-                connectNulls
-                isAnimationActive={false}
-              />
-              <Line
-                name="15分钟预测"
-                type="natural"
-                dataKey="predictedSpeed"
-                stroke="#0284c7"
-                strokeWidth={3}
-                strokeDasharray="8 6"
-                dot={false}
-                activeDot={{ r: 4, strokeWidth: 0, fill: '#0284c7' }}
-                connectNulls
-                isAnimationActive={false}
-              />
-              <Brush
-                dataKey="time"
-                startIndex={zoomRange.startIndex}
-                endIndex={zoomRange.endIndex}
-                onChange={(range) => {
-                  if (typeof range?.startIndex !== 'number' || typeof range?.endIndex !== 'number') return;
-                  setZoomRange({ startIndex: range.startIndex, endIndex: range.endIndex });
-                }}
-                height={34}
-                travellerWidth={12}
-                stroke="#0f766e"
-                fill="#f8fafc"
-                tickFormatter={(value) => String(value)}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
+            </div>
+            <div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs font-semibold leading-relaxed text-slate-500">
+              点击后会把图表快速聚焦到对应高峰时段。
+            </div>
+          </div>
         </div>
 
         {!chartLoading && chartMeta.actualCount + chartMeta.predictedCount === 0 && (
@@ -495,7 +596,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div className="console-card p-5">
           <div className="mb-4 flex items-center justify-between">
             <div className="text-xs font-black uppercase tracking-widest text-slate-400">Selected Node</div>
@@ -508,12 +609,58 @@ export default function Dashboard() {
           <div className="mt-1 text-sm font-bold text-slate-500">
             最新状态：{statusText(selectedLatest?.congestion_status)}
           </div>
+          <div className="mt-4 rounded-xl bg-emerald-50 px-3 py-3">
+            <div className="text-[11px] font-black uppercase tracking-widest text-emerald-700">Actual Snapshot</div>
+            <div className="mt-2 text-2xl font-black text-emerald-700">
+              {latestActualPoint?.actualSpeed !== undefined ? `${latestActualPoint.actualSpeed.toFixed(1)} km/h` : '--'}
+            </div>
+            <div className="mt-1 text-xs font-bold text-emerald-700/80">
+              采集时间：{latestActualPoint ? latestActualPoint.time : '--'}
+            </div>
+          </div>
         </div>
 
         <div className="console-card p-5">
           <div className="mb-4 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400">
             <TrendingUp className="h-4 w-4 text-brand-500" />
-            Chart Summary
+            Prediction Snapshot
+          </div>
+          <div className="rounded-xl bg-sky-50 px-4 py-4">
+            <div className="text-[11px] font-black uppercase tracking-widest text-sky-700">Forecast</div>
+            <div className="mt-2 text-2xl font-black text-sky-700">
+              {latestPredictedPoint?.predictedSpeed !== undefined ? `${latestPredictedPoint.predictedSpeed.toFixed(1)} km/h` : '--'}
+            </div>
+            <div className="mt-2 space-y-1 text-xs font-bold text-sky-700/80">
+              <div>预测时点：{latestPredictedPoint ? latestPredictedPoint.time : '--'}</div>
+              <div>生成时间：{formatDateTime(latestPredictedPoint?.generatedAt)}</div>
+            </div>
+          </div>
+          <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs font-semibold leading-relaxed text-slate-500">
+            这里展示当前图表中最新一条 15 分钟预测值，方便直接和真实速度做对照。
+          </div>
+        </div>
+
+        <div className="console-card p-5">
+          <div className="mb-4 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400">
+            <Activity className="h-4 w-4 text-brand-500" />
+            Prediction Accuracy
+          </div>
+          <div className="text-3xl font-black text-slate-900">{formatPercent(predictionAccuracy.accuracy)}</div>
+          <div className="mt-2 text-sm font-bold text-slate-500">
+            平均绝对误差：{typeof predictionAccuracy.mae === 'number' ? `${predictionAccuracy.mae.toFixed(1)} km/h` : '--'}
+          </div>
+          <div className="mt-1 text-sm font-bold text-slate-500">
+            对比样本：{predictionAccuracy.sampleCount}
+          </div>
+          <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs font-semibold leading-relaxed text-slate-500">
+            准确度按图内同一时刻同时存在真实值和预测值的点位估算，用于快速判断模型表现趋势。
+          </div>
+        </div>
+
+        <div className="console-card p-5">
+          <div className="mb-4 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400">
+            <Zap className="h-4 w-4 text-brand-500" />
+            Data Summary
           </div>
           <div className="space-y-3">
             <div className="flex items-center justify-between text-sm font-bold">
@@ -524,23 +671,13 @@ export default function Dashboard() {
               <span className="text-slate-500">15分钟预测记录</span>
               <span className="text-sky-600">{chartMeta.predictedCount}</span>
             </div>
-            <div className="rounded-xl bg-slate-50 p-3 text-xs font-semibold leading-relaxed text-slate-500">
-              真实采集点不再密集显示，悬停时会出现焦点点位，保持曲线阅读优先。
+            <div className="flex items-center justify-between text-sm font-bold">
+              <span className="text-slate-500">可视时间范围</span>
+              <span className="text-slate-700">{minuteToLabel(xDomain[0])}-{minuteToLabel(xDomain[1])}</span>
             </div>
-          </div>
-        </div>
-
-        <div className="console-card p-5">
-          <div className="mb-4 text-xs font-black uppercase tracking-widest text-slate-400">Peak Windows</div>
-          <div className="space-y-3">
-            {PEAK_WINDOWS.map((peak) => (
-              <div key={peak.label} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
-                <span className="text-sm font-black text-slate-700">{peak.label}</span>
-                <span className="text-xs font-bold text-slate-400">
-                  {minuteToLabel(peak.start)}-{minuteToLabel(peak.end)}
-                </span>
-              </div>
-            ))}
+            <div className="rounded-xl bg-slate-50 p-3 text-xs font-semibold leading-relaxed text-slate-500">
+              数据源：{chartMeta.sourceTable}。拖动图表底部缩放条后，这里的可视时间范围也会同步变化。
+            </div>
           </div>
         </div>
       </div>
