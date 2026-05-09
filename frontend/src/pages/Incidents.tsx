@@ -38,6 +38,7 @@ type CurrentUser = {
   id?: number;
   role?: string | null;
   roleId?: string | null;
+  role_id?: string | null;
 };
 
 type UserOption = {
@@ -87,7 +88,7 @@ export default function Incidents() {
   const { showToast } = useToast();
   const navigate = useNavigate();
   const currentUser: CurrentUser = JSON.parse(localStorage.getItem('user') || '{}');
-  const currentRoleId = String(currentUser.roleId || '').trim();
+  const currentRoleId = String(currentUser.roleId || currentUser.role_id || '').trim();
   const isAdmin = currentUser.role === '管理员';
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
@@ -246,6 +247,12 @@ export default function Incidents() {
     navigate(`/map?node=${encodeURIComponent(nodeId)}`);
   };
 
+  const canAcceptIncident = (incident: Incident) => {
+    if (incident.status !== 'reported') return false;
+    const assignedHandlerId = String(incident.handler_id || '').trim();
+    return Boolean(currentRoleId) && (!assignedHandlerId || assignedHandlerId === currentRoleId);
+  };
+
   return (
     <div className="space-y-8 pb-8">
 
@@ -328,6 +335,7 @@ export default function Incidents() {
                   const sev = SEVERITY_MAP[item.severity] || SEVERITY_MAP[1];
                   const sta = STATUS_MAP[item.status] || STATUS_MAP.reported;
                   const StatusIcon = sta.icon;
+                  const canAccept = canAcceptIncident(item);
                   return (
                     <motion.tr key={item.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="hover:bg-slate-50/60">
                       <td className="px-6 py-4">
@@ -360,7 +368,13 @@ export default function Incidents() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => updateIncidentStatus(item.id, 'active')}
-                            className="h-8 px-2.5 rounded-lg border border-amber-100 bg-amber-50 text-amber-700 text-[11px] font-bold"
+                            disabled={!canAccept}
+                            title={canAccept ? '受理事件' : '仅待受理且符合处理人ID的用户可以受理'}
+                            className={`h-8 px-2.5 rounded-lg border text-[11px] font-bold ${
+                              canAccept
+                                ? 'border-amber-100 bg-amber-50 text-amber-700'
+                                : 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-300'
+                            }`}
                           >
                             受理
                           </button>

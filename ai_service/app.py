@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json
 import os
+from datetime import datetime, timedelta
 
 import numpy as np
 import torch
@@ -9,6 +10,52 @@ import torch.nn as nn
 
 app = Flask(__name__)
 CORS(app)
+
+# Load daily traffic profile for prediction blending
+PROFILE_PATH = os.path.join(os.path.dirname(__file__), 'daily_profile.json')
+_daily_profile = None
+_node_means = {}
+if os.path.exists(PROFILE_PATH):
+    with open(PROFILE_PATH, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+        _daily_profile = data.get('profile', {})
+        _node_means = data.get('node_means', {})
+    print(f'daily profile loaded: {len(_daily_profile)} nodes, bucket_minutes={data.get("bucket_minutes")}')
+
+
+def _blend_predictions(raw_predictions, reference_time_iso):
+    if _daily_profile is None:
+        return raw_predictions
+    try:
+        ref_time = datetime.fromisoformat(reference_time_iso.replace('Z', '+00:00'))
+    except (ValueError, AttributeError):
+        ref_time = datetime.utcnow()
+
+    blended = []
+    for horizon_item in raw_predictions:
+        minutes_ahead = horizon_item['minutes']
+        target_time = ref_time + timedelta(minutes=minutes_ahead)
+        minute_of_day = target_time.hour * 60 + target_time.minute
+        bucket_minute = (minute_of_day // 5) * 5
+
+        blended_preds = {}
+        for node_id, raw_pred in horizon_item['predictions'].items():
+            node_profile = _daily_profile.get(node_id, {})
+            profile_val = node_profile.get(str(bucket_minute))
+            node_mean = _node_means.get(node_id, raw_pred)
+
+            if profile_val is not None:
+                model_deviation = raw_pred - node_mean
+                blended_val = profile_val + model_deviation * 0.4
+                blended_preds[node_id] = round(max(10.0, min(62.0, blended_val)), 2)
+            else:
+                blended_preds[node_id] = raw_pred
+
+        blended.append({
+            'minutes': horizon_item['minutes'],
+            'predictions': blended_preds,
+        })
+    return blended
 
 
 class GCNLayer(nn.Module):
@@ -121,13 +168,15 @@ def predict():
     try:
         body = request.get_json() or {}
         window = body.get('window', [])
+        reference_time = body.get('reference_time', datetime.utcnow().isoformat() + 'Z')
         all_predictions = predict_all_horizons(window)
-        primary = all_predictions[0]
+        blended = _blend_predictions(all_predictions, reference_time)
+        primary = blended[0]
         return jsonify({
             'success': True,
             'predictions': primary['predictions'],
             'primary_horizon_minutes': primary['minutes'],
-            'multi_horizon_predictions': all_predictions,
+            'multi_horizon_predictions': blended,
             'horizon_minutes': HORIZON_MINUTES,
         })
     except Exception as error:

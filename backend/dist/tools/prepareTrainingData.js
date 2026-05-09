@@ -10,7 +10,10 @@ const promise_1 = __importDefault(require("mysql2/promise"));
 const ROOT_DIR = path_1.default.resolve(__dirname, '../../..');
 const ENV_PATH = path_1.default.join(ROOT_DIR, '.env');
 dotenv_1.default.config({ path: ENV_PATH });
-const SOURCE_TABLE = 'traffic_flow';
+const TRAFFIC_READ_SOURCE = String(process.env.TRAFFIC_READ_SOURCE || 'real').trim().toLowerCase();
+const SOURCE_TABLE = TRAFFIC_READ_SOURCE === 'mock'
+    ? (process.env.TRAFFIC_MOCK_TABLE || 'traffic_flow_mock')
+    : (process.env.TRAFFIC_REAL_TABLE || 'traffic_flow');
 const RAW_TABLE = 'traffic_flow_train_raw';
 const ALIGNED_TABLE = 'traffic_flow_train_aligned';
 const VERSION_TABLE = 'training_dataset_versions';

@@ -34,6 +34,7 @@ type CurrentUser = {
   isPasswordSet?: boolean;
   lastLoginTime?: string | null;
   lastLoginIp?: string | null;
+  roleId?: string | null;
 };
 
 type ExportRecord = {
@@ -492,6 +493,13 @@ export default function Settings() {
                         ) : (
                           <span className="text-sm font-black text-slate-900">{user.username || '未设置'}</span>
                         )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
+                      <div className="px-6 py-5 text-sm font-black text-slate-500">身份信息</div>
+                      <div className="px-6 py-5">
+                        <span className="text-sm font-black text-slate-900">{user.roleId}</span>
                       </div>
                     </div>
 

@@ -30,6 +30,10 @@ function isValidRoleId(value: string | null | undefined) {
   return /^(S|G)\d{4,}$/.test(String(value).trim());
 }
 
+function normalizeRoleId(value: string | null | undefined) {
+  return String(value || '').trim();
+}
+
 async function getUsersRoleIdSet() {
   const [rows]: any = await pool.query(
     `SELECT role_id FROM users WHERE role_id IS NOT NULL AND role_id <> ''`
@@ -279,13 +283,13 @@ async function persistPredictionSnapshot(flaskData: any, generatedAt: Date) {
 
 async function inferPredictionSnapshot() {
   const window = await buildModelWindow(NODE_IDS);
-  const flaskResp = await axios.post(`${AI_SERVICE_URL}/predict`, { window });
+  const generatedAt = new Date();
+  const flaskResp = await axios.post(`${AI_SERVICE_URL}/predict`, { window, reference_time: generatedAt.toISOString() });
   const flaskData: any = flaskResp.data;
   if (!flaskData.success) {
     throw new Error(flaskData.error || 'predict failed');
   }
 
-  const generatedAt = new Date();
   const snapshots = normalizePredictionPayload(flaskData).map((item) => ({
     horizon_minutes: item.minutes,
     target_at: new Date(generatedAt.getTime() + item.minutes * 60 * 1000).toISOString(),
@@ -522,8 +526,8 @@ app.get('/api/incidents', async (req, res) => {
 app.post('/api/incidents', requireAuth, async (req: AuthenticatedRequest, res) => {
   const { node_id, type, description, severity, reporter_id, handler_id } = req.body;
   try {
-    const reporterId = String(reporter_id || req.user?.role_id || '').trim();
-    const handlerId = String(handler_id || '').trim();
+    const reporterId = normalizeRoleId(reporter_id || req.user?.role_id || '');
+    const handlerId = normalizeRoleId(handler_id || '');
     if (!isValidRoleId(reporterId)) {
       return res.status(400).json({ success: false, error: 'Invalid reporter_id format, expected S0001 or G0001' });
     }
@@ -537,11 +541,10 @@ app.post('/api/incidents', requireAuth, async (req: AuthenticatedRequest, res) =
     if (handlerId && !userRoleIdSet.has(handlerId)) {
       return res.status(400).json({ success: false, error: 'handler_id does not exist in users table' });
     }
-    const normalizedStatus = handlerId ? 'active' : 'reported';
     const [result]: any = await pool.query(
       `INSERT INTO incidents (node_id, type, description, severity, status, reporter_id, handler_id, created_at)
        VALUES (?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NOW())`,
-      [node_id, type, description, severity, normalizedStatus, reporterId, handlerId]
+      [node_id, type, description, severity, 'reported', reporterId, handlerId]
     );
     res.json({ success: true, id: result.insertId });
   } catch (err) {
@@ -554,7 +557,8 @@ app.put('/api/incidents/:id', requireAuth, async (req: AuthenticatedRequest, res
   const validStatus = new Set(['reported', 'active', 'resolved', 'ignored']);
   const nextStatus = validStatus.has(status) ? status : 'active';
   try {
-    const handlerId = String(handler_id || req.user?.role_id || '').trim();
+    const currentRoleId = normalizeRoleId(req.user?.role_id || '');
+    const handlerId = normalizeRoleId(handler_id || currentRoleId || '');
     if (handlerId && !isValidRoleId(handlerId)) {
       return res.status(400).json({ success: false, error: 'Invalid handler_id format, expected S0001 or G0001' });
     }
@@ -564,13 +568,38 @@ app.put('/api/incidents/:id', requireAuth, async (req: AuthenticatedRequest, res
         return res.status(400).json({ success: false, error: 'handler_id does not exist in users table' });
       }
     }
+
+    const [incidentRows]: any = await pool.query(
+      'SELECT id, status, handler_id FROM incidents WHERE id = ? LIMIT 1',
+      [req.params.id]
+    );
+    if (incidentRows.length === 0) {
+      return res.status(404).json({ success: false, error: 'incident not found' });
+    }
+
+    const incident = incidentRows[0] as { status: string; handler_id: string | null };
+    const assignedHandlerId = normalizeRoleId(incident.handler_id);
+    if (nextStatus === 'active' && incident.status === 'reported') {
+      if (assignedHandlerId && assignedHandlerId !== currentRoleId) {
+        return res.status(403).json({ success: false, error: 'Only the assigned handler can accept this incident' });
+      }
+      if (!currentRoleId) {
+        return res.status(403).json({ success: false, error: 'Current user has no role_id and cannot accept incidents' });
+      }
+    }
+
+    const nextHandlerId =
+      nextStatus === 'active' && incident.status === 'reported'
+        ? assignedHandlerId || currentRoleId
+        : handlerId;
+
     await pool.query(
       `UPDATE incidents
        SET status = ?,
            handler_id = COALESCE(NULLIF(?, ''), handler_id),
            handled_at = CASE WHEN ? IN ('resolved', 'ignored') THEN NOW() ELSE handled_at END
        WHERE id = ?`,
-      [nextStatus, handlerId, nextStatus, req.params.id]
+      [nextStatus, nextHandlerId, nextStatus, req.params.id]
     );
     res.json({ success: true });
   } catch (err) {

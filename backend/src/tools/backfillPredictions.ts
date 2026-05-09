@@ -148,7 +148,7 @@ async function main() {
   for (let index = windowSize - 1; index < buckets.length; index += 1) {
     const generatedAt = buckets[index].generatedAt;
     const window = buckets.slice(index - windowSize + 1, index + 1).map((bucket) => bucket.values);
-    const flaskResp = await axios.post(`${AI_SERVICE_URL}/predict`, { window });
+    const flaskResp = await axios.post(`${AI_SERVICE_URL}/predict`, { window, reference_time: generatedAt.toISOString() });
     const flaskData: any = flaskResp.data;
     if (!flaskData.success) {
       throw new Error(flaskData.error || 'predict failed');

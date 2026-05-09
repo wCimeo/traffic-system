@@ -7,7 +7,10 @@ const ROOT_DIR = path.resolve(__dirname, '../../..');
 const ENV_PATH = path.join(ROOT_DIR, '.env');
 dotenv.config({ path: ENV_PATH });
 
-const SOURCE_TABLE = 'traffic_flow';
+const TRAFFIC_READ_SOURCE = String(process.env.TRAFFIC_READ_SOURCE || 'real').trim().toLowerCase();
+const SOURCE_TABLE = TRAFFIC_READ_SOURCE === 'mock'
+  ? (process.env.TRAFFIC_MOCK_TABLE || 'traffic_flow_mock')
+  : (process.env.TRAFFIC_REAL_TABLE || 'traffic_flow');
 const RAW_TABLE = 'traffic_flow_train_raw';
 const ALIGNED_TABLE = 'traffic_flow_train_aligned';
 const VERSION_TABLE = 'training_dataset_versions';
