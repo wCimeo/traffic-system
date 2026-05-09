@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { AlertTriangle, ArrowRight, Brain, Lock, Map, Navigation, Phone, RefreshCw, User } from 'lucide-react';
@@ -29,6 +29,8 @@ export default function Login() {
   const [captchaCountdown, setCaptchaCountdown] = useState(60);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const captchaLoadingRef = useRef(false);
+  const captchaRetryTimerRef = useRef<number | null>(null);
 
   const isRegisterWithPhone = mode === 'register' && phone.trim().length > 0;
   const submitLabel = useMemo(() => {
@@ -44,16 +46,46 @@ export default function Login() {
     navigate(data.needSetPassword ? '/settings?section=password' : '/dashboard');
   };
 
-  const loadCaptcha = async () => {
-    const res = await api.get('/api/auth/captcha');
-    setCaptchaData({ captchaId: res.data.captchaId, svg: res.data.svg, expiresIn: res.data.expiresIn });
-    setCaptcha('');
-    setCaptchaCountdown(60);
-  };
+  const loadCaptcha = useCallback(async (options: { silent?: boolean; retryOnRateLimit?: boolean } = {}) => {
+    if (captchaLoadingRef.current) return;
+    captchaLoadingRef.current = true;
+    if (captchaRetryTimerRef.current) {
+      window.clearTimeout(captchaRetryTimerRef.current);
+      captchaRetryTimerRef.current = null;
+    }
+
+    try {
+      const res = await api.get('/api/auth/captcha');
+      setCaptchaData({ captchaId: res.data.captchaId, svg: res.data.svg, expiresIn: res.data.expiresIn });
+      setCaptcha('');
+      setCaptchaCountdown(60);
+    } catch (err: any) {
+      if (err?.response?.status === 429 && options.retryOnRateLimit !== false) {
+        captchaRetryTimerRef.current = window.setTimeout(() => {
+          loadCaptcha({ silent: options.silent, retryOnRateLimit: false }).catch(() => null);
+        }, 1200);
+        if (!options.silent) {
+          setError(err.response?.data?.error || '验证码刷新过于频繁，请稍后再试');
+        }
+        return;
+      }
+      if (!options.silent) {
+        setError(err?.response?.data?.error || '图形验证码加载失败，请检查后端服务');
+      }
+      throw err;
+    } finally {
+      captchaLoadingRef.current = false;
+    }
+  }, []);
 
   useEffect(() => {
-    loadCaptcha().catch(() => setError('图形验证码加载失败，请检查后端服务'));
-  }, []);
+    loadCaptcha({ silent: true }).catch(() => setError('图形验证码加载失败，请检查后端服务'));
+    return () => {
+      if (captchaRetryTimerRef.current) {
+        window.clearTimeout(captchaRetryTimerRef.current);
+      }
+    };
+  }, [loadCaptcha]);
 
   useEffect(() => {
     if (countdown <= 0) return;
@@ -63,7 +95,7 @@ export default function Login() {
 
   useEffect(() => {
     if (captchaCountdown <= 0) {
-      loadCaptcha().catch(() => null);
+      loadCaptcha({ silent: true }).catch(() => null);
       return;
     }
     const t = window.setTimeout(() => setCaptchaCountdown((v) => v - 1), 1000);
@@ -260,7 +292,7 @@ export default function Login() {
               <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">图形验证码</label>
               <div className="flex gap-3">
                 <input className="input-base !h-14 flex-1 border border-slate-100 bg-slate-50" value={captcha} onChange={(e) => setCaptcha(e.target.value)} placeholder="请输入图形验证码" />
-                <button type="button" onClick={loadCaptcha} className="flex h-14 w-36 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50" title="刷新验证码">
+                <button type="button" onClick={() => loadCaptcha().catch(() => null)} className="flex h-14 w-36 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50" title="刷新验证码">
                   {captchaData ? <span dangerouslySetInnerHTML={{ __html: captchaData.svg }} /> : <RefreshCw className="h-4 w-4 animate-spin text-slate-400" />}
                 </button>
               </div>
