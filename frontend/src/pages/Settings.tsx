@@ -28,7 +28,7 @@ type ThemeMode = 'light' | 'dark' | 'system';
 type CurrentUser = {
   id?: number;
   username?: string | null;
-  phone?: string | null;
+  email?: string | null;
   avatarUrl?: string | null;
   gender?: string | null;
   isPasswordSet?: boolean;
@@ -106,8 +106,8 @@ function formatLoginIp(value?: string | null) {
   return ip;
 }
 
-function formatPhoneStatus(phone?: string | null) {
-  return phone ? '已绑定' : '未绑定';
+function formatEmailStatus(email?: string | null) {
+  return email ? '已绑定' : '未绑定';
 }
 
 export default function Settings() {
@@ -139,10 +139,10 @@ export default function Settings() {
   const [pwLoading, setPwLoading] = useState(false);
   const [pwMsg, setPwMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
-  const [phoneForm, setPhoneForm] = useState({ phone: storedUser.phone || '', smsCode: '' });
-  const [phoneSending, setPhoneSending] = useState(false);
-  const [phoneCountdown, setPhoneCountdown] = useState(0);
-  const [phoneVerified, setPhoneVerified] = useState(false);
+  const [emailForm, setEmailForm] = useState({ email: storedUser.email || '', emailCode: '' });
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailCountdown, setEmailCountdown] = useState(0);
+  const [emailVerified, setEmailVerified] = useState(false);
 
   useEffect(() => {
     const section = getSectionFromSearch(location.search);
@@ -173,10 +173,10 @@ export default function Settings() {
   }, [themeMode]);
 
   useEffect(() => {
-    if (phoneCountdown <= 0) return;
-    const timer = window.setTimeout(() => setPhoneCountdown((curr) => curr - 1), 1000);
+    if (emailCountdown <= 0) return;
+    const timer = window.setTimeout(() => setEmailCountdown((curr) => curr - 1), 1000);
     return () => window.clearTimeout(timer);
-  }, [phoneCountdown]);
+  }, [emailCountdown]);
 
   useEffect(() => {
     api.get('/api/auth/me')
@@ -188,7 +188,7 @@ export default function Settings() {
           gender: nextUser.gender || '',
           avatarUrl: nextUser.avatarUrl || '',
         });
-        setPhoneForm({ phone: nextUser.phone || '', smsCode: '' });
+        setEmailForm({ email: nextUser.email || '', emailCode: '' });
         localStorage.setItem('user', JSON.stringify(nextUser));
       })
       .catch(() => null);
@@ -214,8 +214,8 @@ export default function Settings() {
     try {
       const res = await api.post('/api/auth/profile', {
         username,
-        phone: user.phone || '',
-        smsCode: '',
+        email: user.email || '',
+        emailCode: '',
         avatarUrl: profileForm.avatarUrl.trim(),
         gender: profileForm.gender,
       });
@@ -313,47 +313,47 @@ export default function Settings() {
     }
   };
 
-  const handleSendPhoneSms = async () => {
-    const phone = String(phoneForm.phone || '').trim();
-    if (!/^1\d{10}$/.test(phone)) {
-      showToast('【手机号验证】请输入有效手机号', 'error');
+  const handleSendEmailCode = async () => {
+    const email = String(emailForm.email || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showToast('【邮箱验证】请输入有效邮箱地址', 'error');
       return;
     }
-    setPhoneSending(true);
+    setEmailSending(true);
     try {
-      const res = await api.post('/api/auth/sms/send-profile', { phone });
-      setPhoneCountdown(60);
+      const res = await api.post('/api/auth/email/send-profile', { email });
+      setEmailCountdown(60);
       const devCode = res.data?.devCode ? `（开发验证码：${res.data.devCode}）` : '';
-      showToast(`【手机号验证】验证码已发送，60 秒内有效${devCode}`, 'success');
+      showToast(`【邮箱验证】验证码已发送，60 秒内有效${devCode}`, 'success');
     } catch (err: any) {
-      showToast(`【手机号验证】${err.response?.data?.error || '发送失败'}`, 'error');
+      showToast(`【邮箱验证】${err.response?.data?.error || '发送失败'}`, 'error');
     } finally {
-      setPhoneSending(false);
+      setEmailSending(false);
     }
   };
 
-  const handleVerifyPhone = async () => {
-    const phone = String(phoneForm.phone || '').trim();
-    const smsCode = String(phoneForm.smsCode || '').trim();
-    if (!/^1\d{10}$/.test(phone)) {
-      showToast('【手机号验证】请输入有效手机号', 'error');
+  const handleVerifyEmail = async () => {
+    const email = String(emailForm.email || '').trim();
+    const emailCode = String(emailForm.emailCode || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showToast('【邮箱验证】请输入有效邮箱地址', 'error');
       return;
     }
-    if (!smsCode) {
-      showToast('【手机号验证】请输入短信验证码', 'error');
+    if (!emailCode) {
+      showToast('【邮箱验证】请输入邮箱验证码', 'error');
       return;
     }
 
     try {
-      const res = await api.post('/api/auth/phone/bind', { phone, smsCode });
+      const res = await api.post('/api/auth/email/bind', { email, emailCode });
       const nextUser: CurrentUser = res.data.user;
       saveUserToLocal(nextUser);
-      setPhoneForm({ phone: nextUser.phone || phone, smsCode: '' });
-      setPhoneVerified(true);
-      showToast('【手机号验证】验证通过', 'success');
+      setEmailForm({ email: nextUser.email || email, emailCode: '' });
+      setEmailVerified(true);
+      showToast('【邮箱验证】验证通过', 'success');
     } catch (err: any) {
-      showToast(`【手机号验证】${err.response?.data?.error || '验证失败'}`, 'error');
-      setPhoneVerified(false);
+      showToast(`【邮箱验证】${err.response?.data?.error || '验证失败'}`, 'error');
+      setEmailVerified(false);
     }
   };
 
@@ -511,9 +511,9 @@ export default function Settings() {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
-                      <div className="border-b border-slate-100 px-6 py-5 text-sm font-black text-slate-500 md:border-b-0">手机号</div>
+                      <div className="border-b border-slate-100 px-6 py-5 text-sm font-black text-slate-500 md:border-b-0">邮箱</div>
                       <div className="border-b border-slate-100 px-6 py-5">
-                        <span className="text-sm font-black text-slate-900">{formatPhoneStatus(user.phone)}</span>
+                        <span className="text-sm font-black text-slate-900">{formatEmailStatus(user.email)}</span>
                       </div>
                     </div>
 
@@ -605,7 +605,7 @@ export default function Settings() {
 
                   {!user.isPasswordSet && (
                     <div className="mb-6 rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-800">
-                      当前账号通过手机验证码注册，尚未设置密码。
+                      当前账号通过邮箱验证码注册，尚未设置密码。
                     </div>
                   )}
 
@@ -672,45 +672,45 @@ export default function Settings() {
                       <KeyRound className="h-5 w-5" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-black text-slate-900">手机号验证</h3>
-                      <p className="text-sm text-slate-500">绑定或更新手机号，用于账号安全验证。</p>
+                      <h3 className="text-lg font-black text-slate-900">邮箱验证</h3>
+                      <p className="text-sm text-slate-500">绑定或更新邮箱，用于账号安全验证。</p>
                     </div>
                   </div>
 
                   <div className="space-y-5">
-                    <div className="text-sm font-black text-slate-900">{formatPhoneStatus(user.phone)}</div>
+                    <div className="text-sm font-black text-slate-900">{formatEmailStatus(user.email)}</div>
                     <div className="flex gap-2">
                       <input
                         className="input-base h-10 flex-1 bg-white ring-1 ring-slate-100"
-                        value={phoneForm.phone}
+                        value={emailForm.email}
                         onChange={(e) => {
-                          setPhoneForm((curr) => ({ ...curr, phone: e.target.value }));
-                          setPhoneVerified(false);
+                          setEmailForm((curr) => ({ ...curr, email: e.target.value }));
+                          setEmailVerified(false);
                         }}
-                        placeholder="输入手机号"
+                        placeholder="输入邮箱地址"
                       />
                       <button
                         type="button"
-                        onClick={handleSendPhoneSms}
-                        disabled={phoneSending || phoneCountdown > 0}
+                        onClick={handleSendEmailCode}
+                        disabled={emailSending || emailCountdown > 0}
                         className="h-10 rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-600 disabled:opacity-50"
                       >
-                        {phoneCountdown > 0 ? `${phoneCountdown}s` : phoneSending ? '发送中' : '发验证码'}
+                        {emailCountdown > 0 ? `${emailCountdown}s` : emailSending ? '发送中' : '发验证码'}
                       </button>
                     </div>
                     <div className="flex gap-2">
                       <input
                         className="input-base h-10 flex-1 bg-white ring-1 ring-slate-100"
-                        value={phoneForm.smsCode}
-                        onChange={(e) => setPhoneForm((curr) => ({ ...curr, smsCode: e.target.value }))}
-                        placeholder="输入短信验证码"
+                        value={emailForm.emailCode}
+                        onChange={(e) => setEmailForm((curr) => ({ ...curr, emailCode: e.target.value }))}
+                        placeholder="输入邮箱验证码"
                       />
-                      <button type="button" onClick={handleVerifyPhone} className="h-10 rounded-lg bg-slate-900 px-3 text-xs font-bold text-white">
+                      <button type="button" onClick={handleVerifyEmail} className="h-10 rounded-lg bg-slate-900 px-3 text-xs font-bold text-white">
                         验证并绑定
                       </button>
                     </div>
-                    <div className={`text-xs font-bold ${phoneVerified ? 'text-emerald-600' : 'text-slate-400'}`}>
-                      {phoneVerified ? '【手机号验证】验证通过' : '短信验证码 60 秒内有效'}
+                    <div className={`text-xs font-bold ${emailVerified ? 'text-emerald-600' : 'text-slate-400'}`}>
+                      {emailVerified ? '【邮箱验证】验证通过' : '邮箱验证码 60 秒内有效'}
                     </div>
                   </div>
                 </div>

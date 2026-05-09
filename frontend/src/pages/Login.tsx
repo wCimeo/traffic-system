@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { AlertTriangle, ArrowRight, Brain, Lock, Map, Navigation, Phone, RefreshCw, User } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Brain, Lock, Mail, Map, Navigation, RefreshCw, User } from 'lucide-react';
 import api from '../api';
 import { useToast } from '../components/ToastProvider';
 import trafficIcon from '../assets/traffic.png';
 
-type LoginMode = 'password' | 'phone' | 'register';
+type LoginMode = 'password' | 'email' | 'register';
 type CaptchaState = { captchaId: string; svg: string; expiresIn?: number };
 
 export default function Login() {
@@ -16,15 +16,15 @@ export default function Login() {
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [phone, setPhone] = useState('');
-  const [smsCode, setSmsCode] = useState('');
+  const [email, setEmail] = useState('');
+  const [emailCode, setEmailCode] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
   const [registerConfirm, setRegisterConfirm] = useState('');
   const [captcha, setCaptcha] = useState('');
   const [captchaData, setCaptchaData] = useState<CaptchaState | null>(null);
 
   const [loading, setLoading] = useState(false);
-  const [sendingSms, setSendingSms] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [captchaCountdown, setCaptchaCountdown] = useState(60);
   const [error, setError] = useState('');
@@ -32,11 +32,11 @@ export default function Login() {
   const captchaLoadingRef = useRef(false);
   const captchaRetryTimerRef = useRef<number | null>(null);
 
-  const isRegisterWithPhone = mode === 'register' && phone.trim().length > 0;
+  const isRegisterWithEmail = mode === 'register' && email.trim().length > 0;
   const submitLabel = useMemo(() => {
     if (loading) return '正在验证...';
     if (mode === 'register') return '创建账号并登录';
-    if (mode === 'phone') return '手机验证码登录';
+    if (mode === 'email') return '邮箱验证码登录';
     return '账号密码登录';
   }, [loading, mode]);
 
@@ -102,16 +102,16 @@ export default function Login() {
     return () => window.clearTimeout(t);
   }, [captchaCountdown]);
 
-  const sendSms = async () => {
-    if (!phone.trim()) return setError('请先填写手机号');
-    if (!captcha.trim()) return setError('请先填写图形验证码，再获取短信验证码');
+  const sendEmailCode = async () => {
+    if (!email.trim()) return setError('请先填写邮箱地址');
+    if (!captcha.trim()) return setError('请先填写图形验证码，再获取邮箱验证码');
     if (!captchaData) return;
-    setSendingSms(true);
+    setSendingEmail(true);
     setError('');
     setNotice('');
     try {
-      const res = await api.post('/api/auth/sms/send', {
-        phone: phone.trim(),
+      const res = await api.post('/api/auth/email/send', {
+        email: email.trim(),
         captcha: captcha.trim(),
         captchaId: captchaData.captchaId,
       });
@@ -123,7 +123,7 @@ export default function Login() {
       setError(msg);
       showToast(msg, 'error');
     } finally {
-      setSendingSms(false);
+      setSendingEmail(false);
     }
   };
 
@@ -132,7 +132,7 @@ export default function Login() {
       return setError('请填写用户名、密码、确认密码和图形验证码');
     }
     if (registerPassword !== registerConfirm) return setError('两次输入的密码不一致');
-    if (isRegisterWithPhone && !smsCode.trim()) return setError('已填写手机号，请先填写短信验证码');
+    if (isRegisterWithEmail && !emailCode.trim()) return setError('已填写邮箱，请先填写邮箱验证码');
     if (!captchaData) return;
     setLoading(true);
     setError('');
@@ -142,8 +142,8 @@ export default function Login() {
         username: username.trim(),
         password: registerPassword,
         confirmPassword: registerConfirm,
-        phone: phone.trim(),
-        smsCode: smsCode.trim(),
+        email: email.trim(),
+        emailCode: emailCode.trim(),
         captcha: captcha.trim(),
         captchaId: captchaData.captchaId,
       });
@@ -184,14 +184,14 @@ export default function Login() {
     }
   };
 
-  const handlePhoneLogin = async () => {
-    if (!phone.trim() || !captcha.trim() || !smsCode.trim()) return setError('请填写手机号、图形验证码和短信验证码');
+  const handleEmailLogin = async () => {
+    if (!email.trim() || !captcha.trim() || !emailCode.trim()) return setError('请填写邮箱、图形验证码和邮箱验证码');
     if (!captchaData) return;
     setLoading(true);
     setError('');
     setNotice('');
     try {
-      const res = await api.post('/api/auth/phone-login', { phone: phone.trim(), smsCode: smsCode.trim() });
+      const res = await api.post('/api/auth/email-login', { email: email.trim(), emailCode: emailCode.trim() });
       persistLogin(res.data);
       showToast('登录成功', 'success');
     } catch (err: any) {
@@ -204,7 +204,7 @@ export default function Login() {
     }
   };
 
-  const submit = () => (mode === 'register' ? handleRegister() : mode === 'phone' ? handlePhoneLogin() : handlePasswordLogin());
+  const submit = () => (mode === 'register' ? handleRegister() : mode === 'email' ? handleEmailLogin() : handlePasswordLogin());
 
   return (
     <div className="flex min-h-screen w-screen overflow-hidden bg-slate-50 font-sans">
@@ -241,7 +241,7 @@ export default function Login() {
 
           {mode !== 'register' && (
             <div className="mb-8 grid grid-cols-2 rounded-2xl bg-slate-100 p-1">
-              {[{ key: 'password' as LoginMode, label: '账号密码', icon: Lock }, { key: 'phone' as LoginMode, label: '手机验证码', icon: Phone }].map((item) => {
+              {[{ key: 'password' as LoginMode, label: '账号密码', icon: Lock }, { key: 'email' as LoginMode, label: '邮箱验证码', icon: Mail }].map((item) => {
                 const active = mode === item.key;
                 return (
                   <button key={item.key} type="button" onClick={() => { setMode(item.key); setError(''); setNotice(''); }} className={`flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black transition-all ${active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
@@ -254,7 +254,7 @@ export default function Login() {
           )}
 
           <div className="space-y-5">
-            {mode !== 'phone' && (
+            {mode !== 'email' && (
               <div className="space-y-2">
                 <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">用户名</label>
                 <div className="group relative">
@@ -263,16 +263,16 @@ export default function Login() {
                 </div>
               </div>
             )}
-            {(mode === 'register' || mode === 'phone') && (
+            {(mode === 'register' || mode === 'email') && (
               <div className="space-y-2">
-                <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">手机号{mode === 'register' ? '（选填）' : ''}</label>
+                <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">邮箱{mode === 'register' ? '（选填）' : ''}</label>
                 <div className="group relative">
-                  <Phone className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
-                  <input className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="请输入 11 位手机号" />
+                  <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-500" />
+                  <input className="input-base !h-14 border border-slate-100 bg-slate-50 pl-12" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="请输入邮箱地址" />
                 </div>
               </div>
             )}
-            {mode !== 'phone' && (
+            {mode !== 'email' && (
               <div className="space-y-2">
                 <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">{mode === 'register' ? '密码' : '登录密码'}</label>
                 <div className="group relative">
@@ -299,16 +299,16 @@ export default function Login() {
               <p className="text-xs text-slate-400">图形验证码 {captchaCountdown}s 后自动刷新。</p>
             </div>
 
-            {(mode === 'phone' || isRegisterWithPhone) && (
+            {(mode === 'email' || isRegisterWithEmail) && (
               <div className="space-y-2">
-                <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">短信验证码</label>
+                <label className="ml-1 text-[11px] font-black uppercase tracking-widest text-slate-400">邮箱验证码</label>
                 <div className="flex gap-3">
-                  <input className="input-base !h-14 flex-1 border border-slate-100 bg-slate-50" value={smsCode} onChange={(e) => setSmsCode(e.target.value)} placeholder="6 位验证码" />
-                  <button type="button" onClick={sendSms} disabled={sendingSms || countdown > 0} className="btn-ghost h-14 w-32 shrink-0 disabled:pointer-events-none disabled:opacity-60">
-                    {countdown > 0 ? `${countdown}s` : sendingSms ? '发送中' : '获取验证码'}
+                  <input className="input-base !h-14 flex-1 border border-slate-100 bg-slate-50" value={emailCode} onChange={(e) => setEmailCode(e.target.value)} placeholder="6 位验证码" />
+                  <button type="button" onClick={sendEmailCode} disabled={sendingEmail || countdown > 0} className="btn-ghost h-14 w-32 shrink-0 disabled:pointer-events-none disabled:opacity-60">
+                    {countdown > 0 ? `${countdown}s` : sendingEmail ? '发送中' : '获取验证码'}
                   </button>
                 </div>
-                <p className="text-xs text-slate-400">短信验证码 60 秒内有效。</p>
+                <p className="text-xs text-slate-400">邮箱验证码 60 秒内有效。</p>
               </div>
             )}
 

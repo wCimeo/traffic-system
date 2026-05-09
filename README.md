@@ -9,7 +9,7 @@
 - 训练集冻结到固定截止时间，避免训练数据持续漂移
 - LST-GCN 多时域直接监督训练，支持 `15/30/45/60` 分钟预测
 - Dashboard、Route、预测导出接口共用同一套预测逻辑
-- 登录、图形验证码、短信验证码、事件上报、地图聚焦、报表导出均已打通
+- 登录、图形验证码、邮箱验证码、事件上报、地图聚焦、报表导出均已打通
 
 ---
 
@@ -345,7 +345,7 @@ AI 服务返回：
 系统支持三种用户进入方式：
 
 1. 用户名 + 密码 + 图形验证码登录
-2. 手机号 + 短信验证码登录
+2. 邮箱 + 邮箱验证码登录
 3. 用户注册后自动创建会话
 
 实现文件是 [auth.ts](D:\Projects\VS_Code\traffic-system\backend\src\auth.ts)。
@@ -363,14 +363,14 @@ AI 服务返回：
 7. 生成 `session_token`
 8. 写回 `token_expires_at`、`last_login_time`、`last_login_ip`
 
-#### 手机验证码登录
+#### 邮箱验证码登录
 
 1. 前端先获取图形验证码
-2. 提交 `/api/auth/sms/send`
+2. 提交 `/api/auth/email/send`
 3. 后端校验图形验证码
-4. 生成 6 位短信验证码并写入缓存
-5. 前端提交 `/api/auth/phone-login`
-6. 若手机号不存在则自动创建用户
+4. 生成 6 位邮箱验证码并写入缓存
+5. 前端提交 `/api/auth/email-login`
+6. 若邮箱不存在则自动创建用户
 7. 创建登录会话
 
 ### 8.3 图形验证码与防刷机制
@@ -380,22 +380,34 @@ AI 服务返回：
 具体逻辑：
 
 - 图形验证码缓存键：`captcha:<captchaId>`
-- 短信验证码缓存键：`sms:<phone>`
+- 邮箱验证码缓存键：`email:<email>`
 - 刷新频率限制：`captcha:rate:<ip>`
-- 短信发送频率限制：`sms:rate:<ip>`
+- 邮箱验证码发送频率限制：`email:rate:<ip>`
 
 实现特征：
 
 - 优先写 Redis
 - Redis 不可用时退回到进程内 `memoryStore`
 - 图形验证码默认 5 分钟过期
-- 短信验证码默认 10 分钟过期
-- 短信发送默认 60 秒限流
+- 邮箱验证码默认 10 分钟过期
+- 邮箱验证码发送默认 60 秒限流
 
 是否在终端输出验证码由环境变量控制：
 
 - `AUTH_DEV_LOG_CODES=true`：开发模式打印验证码
 - `AUTH_DEV_LOG_CODES=false`：生产模式不打印
+
+邮箱验证码需要配置 SMTP 发信账号。开发环境可把所有验证码实际投递到同一个测试邮箱：
+
+```env
+EMAIL_SMTP_HOST=smtp.qq.com
+EMAIL_SMTP_PORT=465
+EMAIL_SMTP_SECURE=true
+EMAIL_SMTP_USER=3379556417@qq.com
+EMAIL_SMTP_PASS=QQ 邮箱 SMTP 授权码
+EMAIL_FROM=智能交通系统 <3379556417@qq.com>
+EMAIL_TEST_RECIPIENT=3379556417@qq.com
+```
 
 ### 8.4 用户表设计
 
@@ -404,7 +416,7 @@ AI 服务返回：
 - `id`
 - `username`
 - `password`
-- `phone`
+- `email`
 - `avatar_url`
 - `role`
 - `role_id`
@@ -496,7 +508,7 @@ AI 服务返回：
 功能：
 
 - 账号密码登录
-- 手机验证码登录
+- 邮箱验证码登录
 - 注册新用户
 - 图形验证码刷新
 - 登录后进入 Dashboard 或引导到 Settings 设置密码
@@ -504,7 +516,7 @@ AI 服务返回：
 流程：
 
 1. 请求图形验证码
-2. 用户输入账号/密码或手机号/短信码
+2. 用户输入账号/密码或邮箱/邮箱验证码
 3. 后端验证后签发会话
 4. token 存储到 `localStorage`
 
@@ -609,7 +621,7 @@ AI 服务返回：
 - 用户资料查看与编辑
 - 头像上传
 - 密码设置/修改
-- 手机号绑定与短信校验
+- 邮箱绑定与邮箱验证码校验
 - 历史数据导出
 - 预测报表导出
 - 系统说明内嵌展示
@@ -677,9 +689,9 @@ AI 服务返回：
 ### 11.7 认证接口
 
 - `GET /api/auth/captcha`
-- `POST /api/auth/sms/send`
+- `POST /api/auth/email/send`
 - `POST /api/auth/login`
-- `POST /api/auth/phone-login`
+- `POST /api/auth/email-login`
 - `POST /api/auth/register`
 - `GET /api/auth/me`
 - `POST /api/auth/change-password`

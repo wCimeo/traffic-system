@@ -10,11 +10,12 @@ const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const crypto_1 = __importDefault(require("crypto"));
 const db_1 = __importDefault(require("./db"));
 const redis_1 = __importDefault(require("./redis"));
+const mailer_1 = require("./mailer");
 const router = (0, express_1.Router)();
 const SESSION_DAYS = 7;
 const CAPTCHA_TTL_SECONDS = 5 * 60;
-const SMS_TTL_SECONDS = 10 * 60;
-const SMS_RATE_LIMIT_SECONDS = 60;
+const EMAIL_CODE_TTL_SECONDS = 10 * 60;
+const EMAIL_RATE_LIMIT_SECONDS = 60;
 const CAPTCHA_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz';
 const AUTH_DEV_LOG_CODES = String(process.env.AUTH_DEV_LOG_CODES || '').toLowerCase() === 'true';
 const CAPTCHA_RATE_SECONDS = Math.max(1, Number(process.env.AUTH_CAPTCHA_RATE_SECONDS || 2));
@@ -31,8 +32,11 @@ function getClientIp(req) {
     const raw = req.ip || req.socket.remoteAddress || 'unknown';
     return raw.replace(/^::ffff:/, '');
 }
-function normalizePhone(phone) {
-    return String(phone || '').trim();
+function normalizeEmail(email) {
+    return String(email || '').trim().toLowerCase();
+}
+function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 255;
 }
 function normalizeCaptcha(value) {
     return String(value || '').trim().toLowerCase();
@@ -91,6 +95,19 @@ async function addIndexIfMissing(indexName, sql) {
         await db_1.default.query(sql);
     }
 }
+async function dropIndexIfExists(indexName) {
+    const [rows] = await db_1.default.query(`SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND INDEX_NAME = ?`, [indexName]);
+    if (rows.length > 0) {
+        await db_1.default.query(`ALTER TABLE users DROP INDEX ${indexName}`);
+    }
+}
+async function dropColumnIfExists(columns, column) {
+    if (columns.has(column)) {
+        await db_1.default.query(`ALTER TABLE users DROP COLUMN ${column}`);
+        columns.delete(column);
+    }
+}
 function getRolePrefix(role) {
     return role === '管理员' ? 'G' : 'S';
 }
@@ -146,7 +163,7 @@ async function ensureUserTableMigration() {
       id INT AUTO_INCREMENT PRIMARY KEY,
       username VARCHAR(80) NULL,
       password VARCHAR(255) NULL,
-      phone VARCHAR(20) NULL,
+      email VARCHAR(255) NULL,
       avatar_url VARCHAR(500) NULL,
       role VARCHAR(80) NOT NULL,
       role_id VARCHAR(32) NULL,
@@ -166,9 +183,22 @@ async function ensureUserTableMigration() {
         columns.delete('nickname');
         columns.add('role');
     }
+    await dropIndexIfExists('uniq_users_phone');
+    if (columns.has('phone') && !columns.has('email')) {
+        await db_1.default.query('ALTER TABLE users CHANGE COLUMN phone email VARCHAR(255) NULL');
+        columns.delete('phone');
+        columns.add('email');
+    }
     await addColumnIfMissing(columns, 'username', 'VARCHAR(80) NULL');
     await addColumnIfMissing(columns, 'password', 'VARCHAR(255) NULL');
-    await addColumnIfMissing(columns, 'phone', 'VARCHAR(20) NULL');
+    await addColumnIfMissing(columns, 'email', 'VARCHAR(255) NULL');
+    if (columns.has('phone')) {
+        await db_1.default.query(`UPDATE users
+       SET email = phone
+       WHERE (email IS NULL OR email = "")
+         AND phone REGEXP '^[^@[:space:]]+@[^@[:space:]]+[.][^@[:space:]]+$'`);
+        await dropColumnIfExists(columns, 'phone');
+    }
     await addColumnIfMissing(columns, 'avatar_url', 'VARCHAR(500) NULL');
     await addColumnIfMissing(columns, 'role', 'VARCHAR(80) NOT NULL DEFAULT "执行者"');
     await addColumnIfMissing(columns, 'role_id', 'VARCHAR(32) NULL');
@@ -191,14 +221,19 @@ async function ensureUserTableMigration() {
         await db_1.default.query('UPDATE users SET role = COALESCE(NULLIF(role, ""), display_name, "执行者")');
     }
     await db_1.default.query('UPDATE users SET username = NULL WHERE username = ""');
-    await db_1.default.query('UPDATE users SET phone = NULL WHERE phone = ""');
+    await db_1.default.query('UPDATE users SET email = NULL WHERE email = ""');
+    await db_1.default.query(`UPDATE users
+     SET email = NULL
+     WHERE email IS NOT NULL
+       AND email <> ""
+       AND email NOT REGEXP '^[^@[:space:]]+@[^@[:space:]]+[.][^@[:space:]]+$'`);
     await db_1.default.query('UPDATE users SET is_password_set = 1 WHERE password IS NOT NULL AND password <> ""');
     await db_1.default.query('UPDATE users SET role = "执行者" WHERE role IS NULL OR role = ""');
     await normalizeExistingRoleIds();
     await db_1.default.query('ALTER TABLE users MODIFY COLUMN role_id VARCHAR(32) NOT NULL');
-    await db_1.default.query('UPDATE users SET avatar_url = CONCAT("https://api.dicebear.com/9.x/initials/svg?seed=", COALESCE(username, phone, id)) WHERE avatar_url IS NULL OR avatar_url = ""');
+    await db_1.default.query('UPDATE users SET avatar_url = CONCAT("https://api.dicebear.com/9.x/initials/svg?seed=", COALESCE(username, email, id)) WHERE avatar_url IS NULL OR avatar_url = ""');
     await addIndexIfMissing('uniq_users_username', 'CREATE UNIQUE INDEX uniq_users_username ON users (username)');
-    await addIndexIfMissing('uniq_users_phone', 'CREATE UNIQUE INDEX uniq_users_phone ON users (phone)');
+    await addIndexIfMissing('uniq_users_email', 'CREATE UNIQUE INDEX uniq_users_email ON users (email)');
     await addIndexIfMissing('uniq_users_role_id', 'CREATE UNIQUE INDEX uniq_users_role_id ON users (role_id)');
     await addIndexIfMissing('idx_users_session_token', 'CREATE INDEX idx_users_session_token ON users (session_token)');
 }
@@ -206,11 +241,11 @@ function serializeUser(user) {
     return {
         id: user.id,
         username: user.username,
-        phone: user.phone,
+        email: user.email,
         avatarUrl: user.avatar_url,
         role: user.role,
         roleId: user.role_id,
-        displayName: user.role || user.username || user.phone || '用户',
+        displayName: user.role || user.username || user.email || '用户',
         gender: user.gender,
         isPasswordSet: Boolean(user.is_password_set),
         lastLoginTime: user.last_login_time,
@@ -296,55 +331,74 @@ router.get('/captcha', async (req, res) => {
     }
     res.json({ success: true, captchaId, svg: createCaptchaSvg(code), expiresIn: CAPTCHA_TTL_SECONDS });
 });
-router.post('/sms/send', async (req, res) => {
-    const { phone, captchaId, captcha } = req.body;
-    const normalizedPhone = normalizePhone(phone);
-    if (!/^1\d{10}$/.test(normalizedPhone)) {
-        return res.status(400).json({ success: false, error: '请输入有效的手机号' });
+router.post('/email/send', async (req, res) => {
+    const { email, captchaId, captcha } = req.body;
+    const normalizedEmail = normalizeEmail(email);
+    if (!isValidEmail(normalizedEmail)) {
+        return res.status(400).json({ success: false, error: '请输入有效的邮箱地址' });
     }
     if (!(await validateCaptcha(captchaId, captcha))) {
         return res.status(400).json({ success: false, error: '图形验证码错误或已过期' });
     }
     const ip = getClientIp(req);
-    const rateKey = `sms:rate:${ip}`;
+    const rateKey = `email:rate:${ip}`;
     if (await cacheGet(rateKey)) {
         return res.status(429).json({ success: false, error: '发送过于频繁，请稍后再试' });
     }
     const code = randomDigits(6);
-    await cacheSet(`sms:${normalizedPhone}`, code, SMS_TTL_SECONDS);
-    await cacheSet(rateKey, '1', SMS_RATE_LIMIT_SECONDS);
-    if (AUTH_DEV_LOG_CODES) {
-        console.log(`[DEV SMS] phone=${normalizedPhone} code=${code} ttl=${SMS_TTL_SECONDS}s ip=${ip}`);
+    try {
+        const delivery = await (0, mailer_1.sendVerificationEmail)(normalizedEmail, code);
+        await cacheSet(`email:${normalizedEmail}`, code, EMAIL_CODE_TTL_SECONDS);
+        await cacheSet(rateKey, '1', EMAIL_RATE_LIMIT_SECONDS);
+        if (AUTH_DEV_LOG_CODES) {
+            console.log(`[DEV EMAIL] email=${normalizedEmail} deliveredTo=${delivery.deliveredTo} code=${code} ttl=${EMAIL_CODE_TTL_SECONDS}s ip=${ip}`);
+        }
     }
-    res.json({ success: true, message: '验证码已发送（开发模式请查看后端控制台）' });
+    catch (err) {
+        const message = String(err?.message || err || '邮件发送失败');
+        console.error(`[EMAIL SEND FAILED] email=${normalizedEmail} ip=${ip} error=${message}`);
+        return res.status(500).json({ success: false, error: `邮件发送失败：${message}` });
+    }
+    res.json({ success: true, message: '验证码已发送，请查看邮箱' });
 });
-router.post('/sms/send-profile', requireAuth, async (req, res) => {
-    const phone = normalizePhone(req.body.phone || '');
-    if (!/^1\d{10}$/.test(phone)) {
-        return res.status(400).json({ success: false, error: '请输入有效的手机号' });
+router.post('/email/send-profile', requireAuth, async (req, res) => {
+    const email = normalizeEmail(req.body.email || '');
+    if (!isValidEmail(email)) {
+        return res.status(400).json({ success: false, error: '请输入有效的邮箱地址' });
     }
     const ip = getClientIp(req);
-    const rateKey = `sms:rate:${ip}`;
+    const rateKey = `email:rate:${ip}`;
     if (await cacheGet(rateKey)) {
         return res.status(429).json({ success: false, error: '发送过于频繁，请稍后再试' });
     }
     const code = randomDigits(6);
-    await cacheSet(`sms:${phone}`, code, SMS_TTL_SECONDS);
-    await cacheSet(rateKey, '1', SMS_RATE_LIMIT_SECONDS);
-    if (AUTH_DEV_LOG_CODES) {
-        console.log(`[DEV SMS] profile phone=${phone} code=${code} ttl=${SMS_TTL_SECONDS}s ip=${ip}`);
+    try {
+        const delivery = await (0, mailer_1.sendVerificationEmail)(email, code);
+        await cacheSet(`email:${email}`, code, EMAIL_CODE_TTL_SECONDS);
+        await cacheSet(rateKey, '1', EMAIL_RATE_LIMIT_SECONDS);
+        if (AUTH_DEV_LOG_CODES) {
+            console.log(`[DEV EMAIL] profile email=${email} deliveredTo=${delivery.deliveredTo} code=${code} ttl=${EMAIL_CODE_TTL_SECONDS}s ip=${ip}`);
+        }
     }
-    res.json({ success: true, message: '验证码已发送（开发模式请查看后端控制台）' });
+    catch (err) {
+        const message = String(err?.message || err || '邮件发送失败');
+        console.error(`[EMAIL SEND FAILED] profile email=${email} ip=${ip} error=${message}`);
+        return res.status(500).json({ success: false, error: `邮件发送失败：${message}` });
+    }
+    res.json({ success: true, message: '验证码已发送，请查看邮箱' });
 });
-router.post('/phone-login', async (req, res) => {
-    const { phone, smsCode } = req.body;
-    const normalizedPhone = normalizePhone(phone);
-    const expected = await cacheGet(`sms:${normalizedPhone}`);
-    if (!expected || expected !== String(smsCode || '').trim()) {
-        return res.status(400).json({ success: false, error: '短信验证码错误或已过期' });
+router.post('/email-login', async (req, res) => {
+    const { email, emailCode } = req.body;
+    const normalizedEmail = normalizeEmail(email);
+    const expected = await cacheGet(`email:${normalizedEmail}`);
+    if (!isValidEmail(normalizedEmail)) {
+        return res.status(400).json({ success: false, error: '请输入有效的邮箱地址' });
+    }
+    if (!expected || expected !== String(emailCode || '').trim()) {
+        return res.status(400).json({ success: false, error: '邮箱验证码错误或已过期' });
     }
     try {
-        let [rows] = await db_1.default.query('SELECT * FROM users WHERE phone = ?', [normalizedPhone]);
+        let [rows] = await db_1.default.query('SELECT * FROM users WHERE email = ?', [normalizedEmail]);
         let user = rows[0];
         if (!user) {
             const username = await generateUniqueUsername();
@@ -354,8 +408,8 @@ router.post('/phone-login', async (req, res) => {
             for (let i = 0; i < 5; i += 1) {
                 const roleId = await generateRoleIdByRole(role);
                 try {
-                    [result] = await db_1.default.query(`INSERT INTO users (username, phone, role, role_id, avatar_url, is_password_set)
-             VALUES (?, ?, ?, ?, ?, 0)`, [username, normalizedPhone, role, roleId, avatarUrl]);
+                    [result] = await db_1.default.query(`INSERT INTO users (username, email, role, role_id, avatar_url, is_password_set)
+             VALUES (?, ?, ?, ?, ?, 0)`, [username, normalizedEmail, role, roleId, avatarUrl]);
                     break;
                 }
                 catch (err) {
@@ -368,7 +422,7 @@ router.post('/phone-login', async (req, res) => {
             [rows] = await db_1.default.query('SELECT * FROM users WHERE id = ?', [result.insertId]);
             user = rows[0];
         }
-        await cacheDelete(`sms:${normalizedPhone}`);
+        await cacheDelete(`email:${normalizedEmail}`);
         const session = await createSession(user.id, req);
         res.json({
             success: true,
@@ -382,34 +436,34 @@ router.post('/phone-login', async (req, res) => {
         res.status(500).json({ success: false, error: String(err) });
     }
 });
-router.post('/phone/bind', requireAuth, async (req, res) => {
-    const phone = normalizePhone(req.body.phone || '');
-    const smsCode = String(req.body.smsCode || '').trim();
-    const originalPhone = normalizePhone(req.user?.phone || '');
-    if (!/^1\d{10}$/.test(phone)) {
-        return res.status(400).json({ success: false, error: '请输入有效的手机号' });
+router.post('/email/bind', requireAuth, async (req, res) => {
+    const email = normalizeEmail(req.body.email || '');
+    const emailCode = String(req.body.emailCode || '').trim();
+    const originalEmail = normalizeEmail(req.user?.email || '');
+    if (!isValidEmail(email)) {
+        return res.status(400).json({ success: false, error: '请输入有效的邮箱地址' });
     }
-    if (!smsCode) {
-        return res.status(400).json({ success: false, error: '请输入短信验证码' });
+    if (!emailCode) {
+        return res.status(400).json({ success: false, error: '请输入邮箱验证码' });
     }
-    const expected = await cacheGet(`sms:${phone}`);
-    if (!expected || expected !== smsCode) {
-        return res.status(400).json({ success: false, error: '短信验证码错误或已过期' });
+    const expected = await cacheGet(`email:${email}`);
+    if (!expected || expected !== emailCode) {
+        return res.status(400).json({ success: false, error: '邮箱验证码错误或已过期' });
     }
-    const [existing] = await db_1.default.query('SELECT id FROM users WHERE phone = ? AND id <> ? LIMIT 1', [phone, req.user.id]);
+    const [existing] = await db_1.default.query('SELECT id FROM users WHERE email = ? AND id <> ? LIMIT 1', [email, req.user.id]);
     if (existing.length > 0) {
-        return res.status(409).json({ success: false, error: '手机号已被占用' });
+        return res.status(409).json({ success: false, error: '邮箱已被占用' });
     }
-    await db_1.default.query('UPDATE users SET phone = ? WHERE id = ?', [phone, req.user.id]);
-    if (phone !== originalPhone)
-        await cacheDelete(`sms:${phone}`);
+    await db_1.default.query('UPDATE users SET email = ? WHERE id = ?', [email, req.user.id]);
+    if (email !== originalEmail)
+        await cacheDelete(`email:${email}`);
     const [rows] = await db_1.default.query('SELECT * FROM users WHERE id = ?', [req.user.id]);
     res.json({ success: true, user: serializeUser(rows[0]) });
 });
 router.post('/register', async (req, res) => {
-    const { username, password, confirmPassword, phone, captchaId, captcha } = req.body;
+    const { username, password, confirmPassword, email, emailCode, captchaId, captcha } = req.body;
     const account = String(username || '').trim();
-    const normalizedPhone = normalizePhone(phone || '');
+    const normalizedEmail = normalizeEmail(email || '');
     if (!/^[A-Za-z0-9_]{4,32}$/.test(account)) {
         return res.status(400).json({ success: false, error: '用户名需为 4-32 位字母、数字或下划线' });
     }
@@ -419,18 +473,27 @@ router.post('/register', async (req, res) => {
     if (confirmPassword !== undefined && password !== confirmPassword) {
         return res.status(400).json({ success: false, error: '两次输入的密码不一致' });
     }
-    if (normalizedPhone && !/^1\d{10}$/.test(normalizedPhone)) {
-        return res.status(400).json({ success: false, error: '请输入有效的手机号' });
+    if (normalizedEmail && !isValidEmail(normalizedEmail)) {
+        return res.status(400).json({ success: false, error: '请输入有效的邮箱地址' });
     }
-    if (!(await validateCaptcha(captchaId, captcha))) {
+    if (normalizedEmail) {
+        const expected = await cacheGet(`email:${normalizedEmail}`);
+        if (!String(emailCode || '').trim()) {
+            return res.status(400).json({ success: false, error: '请输入邮箱验证码' });
+        }
+        if (!expected || expected !== String(emailCode || '').trim()) {
+            return res.status(400).json({ success: false, error: '邮箱验证码错误或已过期' });
+        }
+    }
+    else if (!(await validateCaptcha(captchaId, captcha))) {
         return res.status(400).json({ success: false, error: '图形验证码错误或已过期' });
     }
     try {
         const [existing] = await db_1.default.query(`SELECT id FROM users
-       WHERE username = ? OR (? <> '' AND phone = ?)
-       LIMIT 1`, [account, normalizedPhone, normalizedPhone]);
+       WHERE username = ? OR (? <> '' AND email = ?)
+       LIMIT 1`, [account, normalizedEmail, normalizedEmail]);
         if (existing.length > 0) {
-            return res.status(409).json({ success: false, error: '用户名或手机号已被注册' });
+            return res.status(409).json({ success: false, error: '用户名或邮箱已被注册' });
         }
         const role = defaultRole();
         const avatarUrl = randomAvatar(role);
@@ -439,8 +502,8 @@ router.post('/register', async (req, res) => {
         for (let i = 0; i < 5; i += 1) {
             const roleId = await generateRoleIdByRole(role);
             try {
-                [result] = await db_1.default.query(`INSERT INTO users (username, password, phone, role, role_id, avatar_url, is_password_set)
-           VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, 1)`, [account, passwordHash, normalizedPhone, role, roleId, avatarUrl]);
+                [result] = await db_1.default.query(`INSERT INTO users (username, password, email, role, role_id, avatar_url, is_password_set)
+           VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, 1)`, [account, passwordHash, normalizedEmail, role, roleId, avatarUrl]);
                 break;
             }
             catch (err) {
@@ -450,6 +513,8 @@ router.post('/register', async (req, res) => {
         }
         if (!result)
             throw new Error('注册失败：无法生成唯一 role_id');
+        if (normalizedEmail)
+            await cacheDelete(`email:${normalizedEmail}`);
         const session = await createSession(result.insertId, req);
         res.json({
             success: true,
@@ -473,7 +538,7 @@ router.post('/login', async (req, res) => {
     try {
         const account = String(username).trim();
         const [rows] = await db_1.default.query(`SELECT * FROM users
-       WHERE username = ? OR phone = ?
+       WHERE username = ? OR email = ?
        LIMIT 1`, [account, account]);
         if (rows.length === 0) {
             return res.status(401).json({ success: false, error: '账号或密码错误' });
@@ -481,7 +546,7 @@ router.post('/login', async (req, res) => {
         const user = rows[0];
         const storedPassword = user.password || user.password_hash;
         if (!storedPassword) {
-            return res.status(400).json({ success: false, error: '该账号尚未设置密码，请使用手机验证码登录后设置密码' });
+            return res.status(400).json({ success: false, error: '该账号尚未设置密码，请使用邮箱验证码登录后设置密码' });
         }
         const ok = storedPassword.startsWith('$2')
             ? await bcryptjs_1.default.compare(password, storedPassword)

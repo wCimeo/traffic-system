@@ -1,0 +1,4 @@
+◇ injected env (29) from ..\.env // tip: ⌘ override existing { override: true }
+◇ injected env (0) from .env // tip: ⌘ enable debugging { debug: true }
+Redis connected
+Backend server running at http://localhost:3103
