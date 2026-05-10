@@ -35,10 +35,18 @@ function normalizeRoleId(value: string | null | undefined) {
 }
 
 async function getUsersRoleIdSet() {
+  const roleIds = await getUsableUserRoleIds();
+  return new Set<string>(roleIds);
+}
+
+async function getUsableUserRoleIds() {
   const [rows]: any = await pool.query(
     `SELECT role_id FROM users WHERE role_id IS NOT NULL AND role_id <> ''`
   );
-  return new Set<string>((rows || []).map((row: any) => String(row.role_id)));
+  const roleIds = (rows || [])
+    .map((row: any) => normalizeRoleId(row.role_id))
+    .filter((roleId: string) => isValidRoleId(roleId));
+  return Array.from(new Set<string>(roleIds)).sort();
 }
 
 async function ensureIncidentsTableMigration() {
@@ -76,6 +84,7 @@ async function ensureIncidentsTableMigration() {
   await addColumnIfMissing('handler_id', 'VARCHAR(64) NULL');
   await addColumnIfMissing('handled_at', 'DATETIME NULL');
   await addColumnIfMissing('updated_at', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
+  await normalizeExistingIncidentsData();
 }
 
 
@@ -96,10 +105,66 @@ const NODES_META = [
 // 鍋ュ悍妫€鏌?
 NODES_META.push({ id: 'K11', name: 'Node K11' });
 const NODE_IDS = NODES_META.map((node) => node.id);
+const INCIDENT_TYPE_LABELS: Record<string, string> = {
+  accident: '交通事故',
+  road_work: '道路施工',
+  heavy_congestion: '异常拥堵',
+  signal_failure: '信号灯故障',
+  breakdown: '车辆故障',
+};
+const MOCK_INCIDENT_TYPES = [
+  { value: '交通事故', detail: '车辆碰撞导致通行能力下降' },
+  { value: '道路施工', detail: '临时占道施工影响车流' },
+  { value: '异常拥堵', detail: '短时车流积压明显' },
+  { value: '信号灯故障', detail: '路口信号灯工作异常' },
+  { value: '车辆故障', detail: '故障车辆停靠影响通行' },
+];
 const TRAFFIC_TABLE = getTrafficReadTableSql();
 const TRAFFIC_SOURCE = getTrafficSourceConfig();
 const DEFAULT_HORIZONS = [15, 30, 45, 60];
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:5001';
+
+function normalizeIncidentText(value: unknown) {
+  return String(value || '')
+    .replace(/妯℃嫙浜嬩欢/g, '模拟事件')
+    .replace(/妯℃嫙/g, '模拟')
+    .replace(/浜嬩欢/g, '事件');
+}
+
+function normalizeIncidentRow(row: any) {
+  const rawType = String(row.type || '');
+  const type = INCIDENT_TYPE_LABELS[rawType] || rawType;
+  let description = normalizeIncidentText(row.description);
+  for (const [legacyType, label] of Object.entries(INCIDENT_TYPE_LABELS)) {
+    description = description.replace(new RegExp(`\\b${legacyType}\\b`, 'g'), label);
+  }
+  return { ...row, type, description };
+}
+
+async function normalizeExistingIncidentsData() {
+  const textReplacements: Array<[string, string]> = [
+    ['妯℃嫙浜嬩欢', '模拟事件'],
+    ['妯℃嫙', '模拟'],
+    ['浜嬩欢', '事件'],
+  ];
+
+  for (const [badText, goodText] of textReplacements) {
+    await pool.query(
+      'UPDATE incidents SET description = REPLACE(description, ?, ?) WHERE description LIKE ?',
+      [badText, goodText, `%${badText}%`]
+    );
+  }
+
+  for (const [legacyType, label] of Object.entries(INCIDENT_TYPE_LABELS)) {
+    await pool.query(
+      `UPDATE incidents
+       SET type = ?,
+           description = REPLACE(description, ?, ?)
+       WHERE type = ? OR description LIKE ?`,
+      [label, legacyType, label, legacyType, `%${legacyType}%`]
+    );
+  }
+}
 
 function parseHorizonList(rawValue: unknown, fallback = DEFAULT_HORIZONS) {
   const rawText = Array.isArray(rawValue) ? rawValue.join(',') : String(rawValue || '');
@@ -517,7 +582,7 @@ app.get('/api/incidents', async (req, res) => {
     const [rows] = await pool.query(
       `SELECT * FROM incidents ORDER BY created_at DESC LIMIT 50`
     );
-    res.json({ success: true, data: rows });
+    res.json({ success: true, data: (rows as any[]).map(normalizeIncidentRow) });
   } catch (err) {
     res.status(500).json({ success: false, error: String(err) });
   }
@@ -526,6 +591,8 @@ app.get('/api/incidents', async (req, res) => {
 app.post('/api/incidents', requireAuth, async (req: AuthenticatedRequest, res) => {
   const { node_id, type, description, severity, reporter_id, handler_id } = req.body;
   try {
+    const incidentType = INCIDENT_TYPE_LABELS[String(type || '')] || String(type || '').trim();
+    const incidentDescription = normalizeIncidentText(description);
     const reporterId = normalizeRoleId(reporter_id || req.user?.role_id || '');
     const handlerId = normalizeRoleId(handler_id || '');
     if (!isValidRoleId(reporterId)) {
@@ -544,7 +611,7 @@ app.post('/api/incidents', requireAuth, async (req: AuthenticatedRequest, res) =
     const [result]: any = await pool.query(
       `INSERT INTO incidents (node_id, type, description, severity, status, reporter_id, handler_id, created_at)
        VALUES (?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NOW())`,
-      [node_id, type, description, severity, 'reported', reporterId, handlerId]
+      [node_id, incidentType, incidentDescription, severity, 'reported', reporterId, handlerId]
     );
     res.json({ success: true, id: result.insertId });
   } catch (err) {
@@ -618,14 +685,14 @@ app.delete('/api/incidents/:id', async (req, res) => {
 
 app.post('/api/incidents/mock-seed', async (req, res) => {
   const count = Math.max(1, Math.min(30, Number(req.body?.count) || 8));
-  const types = ['accident', 'road_work', 'heavy_congestion', 'signal_failure', 'breakdown'];
   const statuses = ['reported', 'active', 'resolved', 'ignored'];
 
   try {
-    const [users]: any = await pool.query(
-      `SELECT role_id FROM users WHERE role_id IS NOT NULL AND role_id <> '' ORDER BY role_id ASC`
-    );
-    const roleIds = (users || []).map((u: any) => String(u.role_id));
+    let roleIds = await getUsableUserRoleIds();
+    if (roleIds.length === 0) {
+      await ensureUserTableMigration();
+      roleIds = await getUsableUserRoleIds();
+    }
     if (roleIds.length === 0) {
       return res.status(400).json({ success: false, error: 'No usable role_id found in users table' });
     }
@@ -633,7 +700,7 @@ app.post('/api/incidents/mock-seed', async (req, res) => {
     const values: any[] = [];
     for (let i = 0; i < count; i += 1) {
       const node = NODES_META[Math.floor(Math.random() * NODES_META.length)];
-      const type = types[Math.floor(Math.random() * types.length)];
+      const type = MOCK_INCIDENT_TYPES[Math.floor(Math.random() * MOCK_INCIDENT_TYPES.length)];
       const severity = 1 + Math.floor(Math.random() * 3);
       const status = statuses[Math.floor(Math.random() * statuses.length)];
       const reporter = roleIds[Math.floor(Math.random() * roleIds.length)];
@@ -641,8 +708,8 @@ app.post('/api/incidents/mock-seed', async (req, res) => {
       const minutesAgo = Math.floor(Math.random() * 360);
       values.push([
         node.id,
-        type,
-        `${type} 妯℃嫙浜嬩欢 #${Date.now().toString().slice(-5)}-${i + 1}`,
+        type.value,
+        `${node.name}发生${type.value}：${type.detail}。模拟事件 #${Date.now().toString().slice(-5)}-${i + 1}`,
         severity,
         status,
         reporter,
