@@ -39,12 +39,15 @@ type CurrentUser = {
   role?: string | null;
   roleId?: string | null;
   role_id?: string | null;
+  displayName?: string | null;
+  username?: string | null;
 };
 
 type UserOption = {
   id: number;
   username?: string | null;
   role?: string | null;
+  roleId?: string | null;
   role_id?: string | null;
 };
 
@@ -82,13 +85,26 @@ const FILTER_ITEMS: Array<{ key: 'all' | IncidentStatus; label: string; icon: an
   { key: 'reported', label: '待受理', icon: AlertTriangle },
   { key: 'active', label: '处理中', icon: Clock },
   { key: 'resolved', label: '已解决', icon: CheckCircle2 },
+  { key: 'ignored', label: '已忽略', icon: X },
 ];
+
+function readStoredUser(): CurrentUser {
+  try {
+    return JSON.parse(localStorage.getItem('user') || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function getRoleId(user?: Pick<CurrentUser, 'roleId' | 'role_id'> | Pick<UserOption, 'roleId' | 'role_id'> | null) {
+  return String(user?.roleId || user?.role_id || '').trim();
+}
 
 export default function Incidents() {
   const { showToast } = useToast();
   const navigate = useNavigate();
-  const currentUser: CurrentUser = JSON.parse(localStorage.getItem('user') || '{}');
-  const currentRoleId = String(currentUser.roleId || currentUser.role_id || '').trim();
+  const [currentUser, setCurrentUser] = useState<CurrentUser>(() => readStoredUser());
+  const currentRoleId = getRoleId(currentUser);
   const isAdmin = currentUser.role === '管理员';
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
@@ -115,13 +131,25 @@ export default function Incidents() {
     setIncidents((res.data.data || []) as Incident[]);
   };
 
-  const loadUsers = async () => {
+  const loadCurrentUser = async () => {
+    const res = await api.get('/api/auth/me');
+    const user = (res.data.user || {}) as CurrentUser;
+    setCurrentUser(user);
+    localStorage.setItem('user', JSON.stringify(user));
+    window.dispatchEvent(new CustomEvent('traffic:user-updated', { detail: user }));
+    return user;
+  };
+
+  const loadUsers = async (fallbackRoleId = currentRoleId) => {
     const res = await api.get('/api/auth/users');
-    const list = (res.data.users || []) as UserOption[];
+    const list = ((res.data.users || []) as UserOption[]).map((user) => ({
+      ...user,
+      role_id: getRoleId(user),
+    }));
     setUsers(list);
     setForm((curr) => ({
       ...curr,
-      reporter_id: curr.reporter_id || currentRoleId || list[0]?.role_id || '',
+      reporter_id: curr.reporter_id || fallbackRoleId || list[0]?.role_id || '',
     }));
   };
 
@@ -130,10 +158,20 @@ export default function Incidents() {
       console.error(e);
       setIncidents([]);
     });
-    loadUsers().catch((e) => {
-      console.error(e);
-      setUsers([]);
-    });
+    (async () => {
+      let freshUser: CurrentUser | null = null;
+      try {
+        freshUser = await loadCurrentUser();
+      } catch (e) {
+        console.error(e);
+      }
+      try {
+        await loadUsers(getRoleId(freshUser) || currentRoleId);
+      } catch (e) {
+        console.error(e);
+        setUsers([]);
+      }
+    })();
   }, []);
 
   const statusCount = useMemo(() => {
@@ -141,6 +179,7 @@ export default function Incidents() {
       reported: incidents.filter((i) => i.status === 'reported').length,
       active: incidents.filter((i) => i.status === 'active').length,
       resolved: incidents.filter((i) => i.status === 'resolved').length,
+      ignored: incidents.filter((i) => i.status === 'ignored').length,
     };
   }, [incidents]);
 
@@ -197,18 +236,22 @@ export default function Incidents() {
         ignored: '已忽略',
       };
       showToast(`事件状态已更新为${labelMap[status]}`, 'success');
-    } catch {
-      showToast('状态更新失败，请稍后重试', 'error');
+    } catch (err: any) {
+      showToast(err?.response?.data?.error || '状态更新失败，请稍后重试', 'error');
     }
   };
 
   const handleDelete = async (id: number) => {
+    if (!isAdmin) {
+      showToast('只有管理员可以删除事件', 'error');
+      return;
+    }
     try {
       await api.delete(`/api/incidents/${id}`);
       await loadIncidents();
       showToast('事件已删除', 'success');
-    } catch {
-      showToast('删除失败，请稍后重试', 'error');
+    } catch (err: any) {
+      showToast(err?.response?.data?.error || '删除失败，请稍后重试', 'error');
     }
   };
 
@@ -233,7 +276,8 @@ export default function Incidents() {
     setRoleSubmitting(true);
     try {
       await api.post(`/api/auth/users/${roleForm.userId}/role`, { role: roleForm.role });
-      await loadUsers();
+      const freshUser = await loadCurrentUser();
+      await loadUsers(getRoleId(freshUser));
       setShowRoleModal(false);
       showToast('用户身份更新成功', 'success');
     } catch (err: any) {
@@ -253,11 +297,25 @@ export default function Incidents() {
     return Boolean(currentRoleId) && (!assignedHandlerId || assignedHandlerId === currentRoleId);
   };
 
+  const isAssignedHandler = (incident: Incident) => {
+    const assignedHandlerId = String(incident.handler_id || '').trim();
+    return Boolean(currentRoleId && assignedHandlerId && assignedHandlerId === currentRoleId);
+  };
+
+  const handleRoleUserChange = (userId: string) => {
+    const target = users.find((user) => String(user.id) === userId);
+    setRoleForm((curr) => ({
+      ...curr,
+      userId,
+      role: target?.role === '管理员' ? '管理员' : '执行者',
+    }));
+  };
+
   return (
     <div className="space-y-8 pb-8">
 
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {FILTER_ITEMS.map((item) => {
           const value =
             item.key === 'all'
@@ -266,20 +324,22 @@ export default function Incidents() {
               ? statusCount.reported
               : item.key === 'active'
               ? statusCount.active
-              : statusCount.resolved;
+              : item.key === 'resolved'
+              ? statusCount.resolved
+              : statusCount.ignored;
           return (
             <button
               key={item.key}
               onClick={() => setFilter(item.key)}
-              className={`console-card p-4 flex items-center justify-between transition-all ${
+              className={`console-card flex min-h-24 min-w-0 items-center justify-between p-4 transition-all ${
                 filter === item.key ? 'bg-slate-900 border-slate-900' : ''
               }`}
             >
-              <div className="text-left">
-                <div className={`text-[11px] font-bold ${filter === item.key ? 'text-slate-300' : 'text-slate-500'}`}>{item.label}</div>
+              <div className="min-w-0 text-left">
+                <div className={`truncate text-[11px] font-bold ${filter === item.key ? 'text-slate-300' : 'text-slate-500'}`}>{item.label}</div>
                 <div className={`text-3xl font-black ${filter === item.key ? 'text-white' : 'text-slate-900'}`}>{value}</div>
               </div>
-              <item.icon className={`h-5 w-5 ${filter === item.key ? 'text-white' : 'text-slate-400'}`} />
+              <item.icon className={`h-5 w-5 shrink-0 ${filter === item.key ? 'text-white' : 'text-slate-400'}`} />
             </button>
           );
         })}
@@ -319,7 +379,18 @@ export default function Incidents() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="min-w-[1180px] w-full table-fixed text-left border-collapse">
+            <colgroup>
+              <col className="w-[90px]" />
+              <col className="w-[130px]" />
+              <col className="w-[250px]" />
+              <col className="w-[110px]" />
+              <col className="w-[110px]" />
+              <col className="w-[110px]" />
+              <col className="w-[110px]" />
+              <col className="w-[180px]" />
+              <col className="w-[290px]" />
+            </colgroup>
             <thead>
               <tr className="bg-slate-50/70">
                 {['路口', '事件类型', '描述', '风险', '状态', '上报人ID', '处理人ID', '上报时间', '操作'].map((h) => (
@@ -336,6 +407,8 @@ export default function Incidents() {
                   const sta = STATUS_MAP[item.status] || STATUS_MAP.reported;
                   const StatusIcon = sta.icon;
                   const canAccept = canAcceptIncident(item);
+                  const canProcess = item.status === 'active' && isAssignedHandler(item);
+                  const canRedo = item.status === 'resolved' && isAssignedHandler(item);
                   return (
                     <motion.tr key={item.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="hover:bg-slate-50/60">
                       <td className="px-6 py-4">
@@ -365,35 +438,71 @@ export default function Incidents() {
                       <td className="px-6 py-4 text-xs text-slate-600">{item.handler_id || '-'}</td>
                       <td className="px-6 py-4 text-xs text-slate-500 whitespace-nowrap">{new Date(item.created_at).toLocaleString('zh-CN')}</td>
                       <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => updateIncidentStatus(item.id, 'active')}
-                            disabled={!canAccept}
-                            title={canAccept ? '受理事件' : '仅待受理且符合处理人ID的用户可以受理'}
-                            className={`h-8 px-2.5 rounded-lg border text-[11px] font-bold ${
-                              canAccept
-                                ? 'border-amber-100 bg-amber-50 text-amber-700'
-                                : 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-300'
-                            }`}
-                          >
-                            受理
-                          </button>
-                          <button
-                            onClick={() => updateIncidentStatus(item.id, 'resolved')}
-                            className="h-8 px-2.5 rounded-lg border border-emerald-100 bg-emerald-50 text-emerald-700 text-[11px] font-bold"
-                          >
-                            解决
-                          </button>
-                          <button
-                            onClick={() => updateIncidentStatus(item.id, 'ignored')}
-                            className="h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-100 text-slate-600 text-[11px] font-bold"
-                          >
-                            忽略
-                          </button>
+                        <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
+                          {item.status === 'reported' && (
+                            <button
+                              onClick={() => updateIncidentStatus(item.id, 'active')}
+                              disabled={!canAccept}
+                              title={canAccept ? '受理事件' : '仅待受理且符合处理人ID的用户可以受理'}
+                              className={`h-8 px-2.5 rounded-lg border text-[11px] font-bold ${
+                                canAccept
+                                  ? 'border-amber-100 bg-amber-50 text-amber-700'
+                                  : 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-300'
+                              }`}
+                            >
+                              受理
+                            </button>
+                          )}
+                          {item.status === 'active' && (
+                            <>
+                              <button
+                                onClick={() => updateIncidentStatus(item.id, 'resolved')}
+                                disabled={!canProcess}
+                                title={canProcess ? '解决事件' : '只有处理人ID对应的用户可以操作'}
+                                className={`h-8 px-2.5 rounded-lg border text-[11px] font-bold ${
+                                  canProcess
+                                    ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                                    : 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-300'
+                                }`}
+                              >
+                                解决
+                              </button>
+                              <button
+                                onClick={() => updateIncidentStatus(item.id, 'ignored')}
+                                disabled={!canProcess}
+                                title={canProcess ? '忽略事件' : '只有处理人ID对应的用户可以操作'}
+                                className={`h-8 px-2.5 rounded-lg border text-[11px] font-bold ${
+                                  canProcess
+                                    ? 'border-slate-200 bg-slate-100 text-slate-600'
+                                    : 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-300'
+                                }`}
+                              >
+                                忽略
+                              </button>
+                            </>
+                          )}
+                          {item.status === 'resolved' && (
+                            <button
+                              onClick={() => updateIncidentStatus(item.id, 'active')}
+                              disabled={!canRedo}
+                              title={canRedo ? '重做事件' : '只有处理人ID对应的用户可以重做'}
+                              className={`h-8 px-2.5 rounded-lg border text-[11px] font-bold ${
+                                canRedo
+                                  ? 'border-sky-100 bg-sky-50 text-sky-700'
+                                  : 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-300'
+                              }`}
+                            >
+                              重做
+                            </button>
+                          )}
                           <button
                             onClick={() => handleDelete(item.id)}
-                            className="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600"
-                            title="删除事件"
+                            className={`h-8 w-8 inline-flex items-center justify-center rounded-lg border ${
+                              isAdmin
+                                ? 'border-red-100 bg-red-50 text-red-600'
+                                : 'border-slate-200 bg-slate-50 text-slate-300'
+                            }`}
+                            title={isAdmin ? '删除事件' : '只有管理员可以删除事件'}
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -554,7 +663,7 @@ export default function Incidents() {
                   className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden"
                 >
                   <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-                    <h3 className="text-xl font-black text-slate-900">用户更新员工身份信息</h3>
+                    <h3 className="text-xl font-black text-slate-900">更新员工身份信息</h3>
                     <button onClick={() => setShowRoleModal(false)} className="h-10 w-10 flex items-center justify-center rounded-xl bg-slate-100 text-slate-400 hover:text-red-500">
                       <X className="h-5 w-5" />
                     </button>
@@ -565,7 +674,7 @@ export default function Incidents() {
                       <select
                         className="input-base px-4"
                         value={roleForm.userId}
-                        onChange={(e) => setRoleForm((curr) => ({ ...curr, userId: e.target.value }))}
+                        onChange={(e) => handleRoleUserChange(e.target.value)}
                       >
                         <option value="">请选择</option>
                         {users.map((u) => (

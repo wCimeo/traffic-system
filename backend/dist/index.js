@@ -168,6 +168,13 @@ async function normalizeExistingIncidentsData() {
            description = REPLACE(description, ?, ?)
        WHERE type = ? OR description LIKE ?`, [label, legacyType, label, legacyType, `%${legacyType}%`]);
     }
+    const roleIds = await getUsableUserRoleIds();
+    if (roleIds.length > 0) {
+        await db_1.default.query(`UPDATE incidents
+       SET handler_id = ?
+       WHERE status IN ('active', 'resolved', 'ignored')
+         AND (handler_id IS NULL OR handler_id = '')`, [roleIds[0]]);
+    }
 }
 function parseHorizonList(rawValue, fallback = DEFAULT_HORIZONS) {
     const rawText = Array.isArray(rawValue) ? rawValue.join(',') : String(rawValue || '');
@@ -576,6 +583,9 @@ app.put('/api/incidents/:id', auth_1.requireAuth, async (req, res) => {
     try {
         const currentRoleId = normalizeRoleId(req.user?.role_id || '');
         const handlerId = normalizeRoleId(handler_id || currentRoleId || '');
+        if (!currentRoleId || !isValidRoleId(currentRoleId)) {
+            return res.status(403).json({ success: false, error: 'Current user has no valid role_id' });
+        }
         if (handlerId && !isValidRoleId(handlerId)) {
             return res.status(400).json({ success: false, error: 'Invalid handler_id format, expected S0001 or G0001' });
         }
@@ -591,29 +601,44 @@ app.put('/api/incidents/:id', auth_1.requireAuth, async (req, res) => {
         }
         const incident = incidentRows[0];
         const assignedHandlerId = normalizeRoleId(incident.handler_id);
-        if (nextStatus === 'active' && incident.status === 'reported') {
-            if (assignedHandlerId && assignedHandlerId !== currentRoleId) {
-                return res.status(403).json({ success: false, error: 'Only the assigned handler can accept this incident' });
+        if (nextStatus === 'active') {
+            if (incident.status === 'reported') {
+                if (assignedHandlerId && assignedHandlerId !== currentRoleId) {
+                    return res.status(403).json({ success: false, error: 'Only the assigned handler can accept this incident' });
+                }
             }
-            if (!currentRoleId) {
-                return res.status(403).json({ success: false, error: 'Current user has no role_id and cannot accept incidents' });
+            else if (assignedHandlerId !== currentRoleId) {
+                return res.status(403).json({ success: false, error: 'Only the assigned handler can reopen this incident' });
             }
         }
-        const nextHandlerId = nextStatus === 'active' && incident.status === 'reported'
-            ? assignedHandlerId || currentRoleId
-            : handlerId;
+        if ((nextStatus === 'resolved' || nextStatus === 'ignored')) {
+            if (incident.status !== 'active') {
+                return res.status(400).json({ success: false, error: 'Only active incidents can be resolved or ignored' });
+            }
+            if (!assignedHandlerId || assignedHandlerId !== currentRoleId) {
+                return res.status(403).json({ success: false, error: 'Only the assigned handler can resolve or ignore this incident' });
+            }
+        }
+        const nextHandlerId = nextStatus === 'active' ? assignedHandlerId || currentRoleId : handlerId;
         await db_1.default.query(`UPDATE incidents
        SET status = ?,
            handler_id = COALESCE(NULLIF(?, ''), handler_id),
-           handled_at = CASE WHEN ? IN ('resolved', 'ignored') THEN NOW() ELSE handled_at END
-       WHERE id = ?`, [nextStatus, nextHandlerId, nextStatus, req.params.id]);
+           handled_at = CASE
+             WHEN ? IN ('resolved', 'ignored') THEN NOW()
+             WHEN ? = 'active' THEN NULL
+             ELSE handled_at
+           END
+       WHERE id = ?`, [nextStatus, nextHandlerId, nextStatus, nextStatus, req.params.id]);
         res.json({ success: true });
     }
     catch (err) {
         res.status(500).json({ success: false, error: String(err) });
     }
 });
-app.delete('/api/incidents/:id', async (req, res) => {
+app.delete('/api/incidents/:id', auth_1.requireAuth, async (req, res) => {
+    if (req.user?.role !== '管理员') {
+        return res.status(403).json({ success: false, error: 'Only administrators can delete incidents' });
+    }
     try {
         await db_1.default.query('DELETE FROM incidents WHERE id = ?', [req.params.id]);
         res.json({ success: true });
@@ -641,7 +666,9 @@ app.post('/api/incidents/mock-seed', async (req, res) => {
             const severity = 1 + Math.floor(Math.random() * 3);
             const status = statuses[Math.floor(Math.random() * statuses.length)];
             const reporter = roleIds[Math.floor(Math.random() * roleIds.length)];
-            const handler = Math.random() < 0.25 ? '' : roleIds[Math.floor(Math.random() * roleIds.length)];
+            const handler = status === 'reported' && Math.random() < 0.45
+                ? ''
+                : roleIds[Math.floor(Math.random() * roleIds.length)];
             const minutesAgo = Math.floor(Math.random() * 360);
             values.push([
                 node.id,
