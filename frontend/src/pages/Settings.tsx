@@ -371,7 +371,8 @@ export default function Settings() {
       ...curr,
     ].slice(0, 10));
 
-    window.open(`http://localhost:3001/api/report/export?${params.toString()}&token=${token}`);
+    if (token) params.append('token', token);
+    window.open(`/api/report/export?${params.toString()}`);
     showToast('历史数据导出已开始', 'success');
   };
 
@@ -386,7 +387,8 @@ export default function Settings() {
       ...curr,
     ].slice(0, 10));
 
-    window.open(`http://localhost:3001/api/report/predict-export?${params.toString()}&token=${token}`);
+    if (token) params.append('token', token);
+    window.open(`/api/report/predict-export?${params.toString()}`);
     showToast('预测数据导出已开始', 'success');
   };
 
