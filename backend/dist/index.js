@@ -134,15 +134,65 @@ const MOCK_INCIDENT_TYPES = [
     { value: '信号灯故障', detail: '路口信号灯工作异常' },
     { value: '车辆故障', detail: '故障车辆停靠影响通行' },
 ];
+const INCIDENT_NODE_NAMES = {
+    A1: '天府大道-锦城大道路口',
+    B2: '益州大道-锦城大道路口',
+    C3: '成华大道-杉板桥路口',
+    D4: '天府大道-华阳立交路口',
+    E5: '剑南大道-锦城大道路口',
+    F6: '益州大道-府城大道路口',
+    G7: '天府三街-天府大道路口',
+    H8: '科华南路-锦尚西二路口',
+    I9: '中环路火车南站-科华南路口',
+    J10: '东站西广场-邛崃山路路口',
+    K11: '人民南路四段',
+};
+const INCIDENT_DIRECTIONS = ['东向西方向', '西向东方向', '南向北方向', '北向南方向', '进城方向', '出城方向'];
 const TRAFFIC_TABLE = (0, trafficSource_1.getTrafficReadTableSql)();
 const TRAFFIC_SOURCE = (0, trafficSource_1.getTrafficSourceConfig)();
 const DEFAULT_HORIZONS = [15, 30, 45, 60];
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:5001';
+function pickRandom(items) {
+    return items[Math.floor(Math.random() * items.length)];
+}
+function buildIncidentDescription(node, type, severity) {
+    const nodeName = INCIDENT_NODE_NAMES[node.id] || node.name || `${node.id}路口`;
+    const direction = pickRandom(INCIDENT_DIRECTIONS);
+    const severityText = severity >= 3
+        ? '现场排队长度持续增加，建议立即安排分流处置'
+        : severity === 2
+            ? '通行效率下降，建议巡查人员到场确认'
+            : '对通行有一定影响，需持续关注';
+    const templates = {
+        交通事故: [
+            `${nodeName}${direction}发生两车轻微碰撞，占用一条机动车道，${severityText}。`,
+            `${nodeName}${direction}有车辆追尾停留，后方车辆变道缓慢，${severityText}。`,
+        ],
+        道路施工: [
+            `${nodeName}${direction}外侧车道临时围挡作业，可用车道减少，${severityText}。`,
+            `${nodeName}${direction}路面养护施工占用部分进口道，车辆通过速度下降，${severityText}。`,
+        ],
+        异常拥堵: [
+            `${nodeName}${direction}短时车流集中，排队已接近上游路段，${severityText}。`,
+            `${nodeName}${direction}车辆等待时间明显增加，路口放行后消散较慢，${severityText}。`,
+        ],
+        信号灯故障: [
+            `${nodeName}信号灯相位切换异常，${direction}车辆通行秩序受影响，${severityText}。`,
+            `${nodeName}部分信号灯显示不稳定，现场车辆依次缓慢通过，${severityText}。`,
+        ],
+        车辆故障: [
+            `${nodeName}${direction}有车辆抛锚停靠，占用右侧车道，${severityText}。`,
+            `${nodeName}${direction}故障车辆等待拖移，后方车辆需绕行，${severityText}。`,
+        ],
+    };
+    return pickRandom(templates[type.value] || [`${nodeName}发生${type.value}，${type.detail}，${severityText}。`]);
+}
 function normalizeIncidentText(value) {
     return String(value || '')
         .replace(/妯℃嫙浜嬩欢/g, '模拟事件')
         .replace(/妯℃嫙/g, '模拟')
-        .replace(/浜嬩欢/g, '事件');
+        .replace(/浜嬩欢/g, '事件')
+        .replace(/。?模拟事件\s*#[\w-]+/g, '');
 }
 function normalizeIncidentRow(row) {
     const rawType = String(row.type || '');
@@ -162,6 +212,10 @@ async function normalizeExistingIncidentsData() {
     for (const [badText, goodText] of textReplacements) {
         await db_1.default.query('UPDATE incidents SET description = REPLACE(description, ?, ?) WHERE description LIKE ?', [badText, goodText, `%${badText}%`]);
     }
+    await db_1.default.query(`UPDATE incidents
+     SET description = TRIM(REGEXP_REPLACE(description, '。?模拟事件 #[[:alnum:]-]+', ''))
+     WHERE description LIKE '%模拟事件 #%'
+        OR description LIKE '%妯℃嫙浜嬩欢 #%'`);
     for (const [legacyType, label] of Object.entries(INCIDENT_TYPE_LABELS)) {
         await db_1.default.query(`UPDATE incidents
        SET type = ?,
@@ -673,7 +727,7 @@ app.post('/api/incidents/mock-seed', async (req, res) => {
             values.push([
                 node.id,
                 type.value,
-                `${node.name}发生${type.value}：${type.detail}。模拟事件 #${Date.now().toString().slice(-5)}-${i + 1}`,
+                buildIncidentDescription(node, type, severity),
                 severity,
                 status,
                 reporter,

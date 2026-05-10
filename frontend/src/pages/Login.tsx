@@ -220,7 +220,7 @@ export default function Login() {
           </div>
           <h1 className="mb-55  text-5xl font-black leading-[0.95] tracking-tight text-white">智能交通流量监控与预测系统</h1>
           <div className="grid grid-cols-2 gap-8">
-            {[{ icon: Brain, label: 'AI预测', desc: 'LST-GCN模型' }, { icon: Map, label: '实时路网', desc: '动态可视化' }, { icon: AlertTriangle, label: '事件预警', desc: '秒级响应' }, { icon: Navigation, label: '智能路线', desc: '多策略推荐' }].map((item) => (
+            {[{ icon: Brain, label: 'AI预测', desc: 'LST-GCN模型' }, { icon: Map, label: '实时路网', desc: '动态可视化' }, { icon: AlertTriangle, label: '事件预警', desc: '合作响应' }, { icon: Navigation, label: '智能路线', desc: '多策略推荐' }].map((item) => (
               <div key={item.label} className="rounded-3xl border border-white/10 bg-white/5 p-5">
                 <div className="mb-2 flex items-center gap-2">
                   <item.icon className="h-3 w-3 text-white" />

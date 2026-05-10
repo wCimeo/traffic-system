@@ -25,6 +25,19 @@ import api, { fetchDashboardChart, triggerPrediction } from '../api';
 import { useToast } from '../components/ToastProvider';
 
 const NODE_OPTIONS = ['A1', 'B2', 'C3', 'D4', 'E5', 'F6', 'G7', 'H8', 'I9', 'J10', 'K11'];
+const NODE_NAME_MAP: Record<string, string> = {
+  A1: '天府大道-锦城大道路口',
+  B2: '益州大道-锦城大道路口',
+  C3: '成华大道-杉板桥路口',
+  D4: '天府大道-华阳立交路口',
+  E5: '剑南大道-锦城大道路口',
+  F6: '益州大道-府城大道路口',
+  G7: '天府三街-天府大道路口',
+  H8: '科华南路-锦尚西二路口',
+  I9: '中环路火车南站-科华南路口',
+  J10: '东站西广场-邛崃山路路口',
+  K11: '人民南路四段',
+};
 
 const PEAK_WINDOWS = [
   { label: '早高峰', start: 7 * 60, end: 9 * 60, color: '#f59e0b' },
@@ -239,7 +252,7 @@ export default function Dashboard() {
     try {
       await triggerPrediction();
       await loadDashboardChart();
-      showToast('15/30/45/60 分钟预测已刷新', 'success');
+      showToast('预测已刷新', 'success');
     } catch (e) {
       console.error(e);
       showToast('预测触发失败，请确认 AI 服务与后端都已启动', 'error');
@@ -274,6 +287,7 @@ export default function Dashboard() {
     : '--';
   const congested = latest.filter((row) => row.congestion_status >= 2).length;
   const selectedLatest = latest.find((row) => row.node_id === selectedNode);
+  const selectedNodeName = NODE_NAME_MAP[selectedNode] || selectedNode;
   const visibleChartPoints = useMemo(() => {
     if (!chartPoints.length) return [];
     const startIndex = Math.max(0, Math.min(zoomRange.startIndex, chartPoints.length - 1));
@@ -416,9 +430,9 @@ export default function Dashboard() {
             <div className="h-2 w-2 animate-pulse rounded-full bg-brand-500" />
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Daily Traffic Outlook</span>
           </div>
-          <h2 className="text-2xl font-black tracking-tight text-slate-900">日内交通速度与 15 分钟预测</h2>
+          <h2 className="text-2xl font-black tracking-tight text-slate-900">日内交通速度监控&预测面板</h2>
           <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
-            按日期查看 00:00-24:00 的真实采集曲线与预测曲线。拖动图表底部缩放条，可以聚焦到任意时段。
+            按日期查看 00:00-24:00 的真实采集曲线与预测曲线。
           </p>
         </div>
 
@@ -460,7 +474,7 @@ export default function Dashboard() {
           <div>
             <h3 className="text-sm font-black uppercase tracking-widest text-slate-900">00:00-24:00 速度曲线</h3>
             <p className="mt-1 text-xs font-bold text-slate-400">
-              {selectedDate} · {selectedNode} · 数据源 {chartMeta.sourceTable}
+              {selectedDate} · {selectedNode} · {selectedNodeName}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-xs font-black">
@@ -470,7 +484,7 @@ export default function Dashboard() {
             </span>
             <span className="inline-flex items-center gap-2 text-sky-600">
               <span className="h-1 w-8 rounded-full border-t-2 border-dashed border-sky-500" />
-              15 分钟预测
+              提前15分钟预测曲线
             </span>
           </div>
         </div>
@@ -622,6 +636,7 @@ export default function Dashboard() {
             <TrendingUp className="h-4 w-4 text-brand-500" />
             Prediction Snapshot
           </div>
+
           <div className="rounded-xl bg-sky-50 px-4 py-4">
             <div className="text-[11px] font-black uppercase tracking-widest text-sky-700">Forecast</div>
             <div className="mt-2 text-2xl font-black text-sky-700">
@@ -659,8 +674,8 @@ export default function Dashboard() {
             <Zap className="h-4 w-4 text-brand-500" />
             Data Summary
           </div>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between text-sm font-bold">
+          <div className="space-y-6">
+            <div className="flex items-center justify-between text-sm font-bold mt-10">
               <span className="text-slate-500">真实采集记录</span>
               <span className="text-emerald-600">{chartMeta.actualCount}</span>
             </div>
@@ -671,9 +686,6 @@ export default function Dashboard() {
             <div className="flex items-center justify-between text-sm font-bold">
               <span className="text-slate-500">可视时间范围</span>
               <span className="text-slate-700">{minuteToLabel(xDomain[0])}-{minuteToLabel(xDomain[1])}</span>
-            </div>
-            <div className="rounded-xl bg-slate-50 p-3 text-xs font-semibold leading-relaxed text-slate-500">
-              数据源：{chartMeta.sourceTable}。拖动图表底部缩放条后，这里的可视时间范围也会同步变化。
             </div>
           </div>
         </div>

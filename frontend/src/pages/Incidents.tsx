@@ -328,9 +328,9 @@ export default function Incidents() {
     try {
       await api.post('/api/incidents/mock-seed', { count: 18 });
       await loadIncidents();
-      showToast('模拟事件已生成', 'success');
+      showToast('事件记录已生成', 'success');
     } catch {
-      showToast('模拟事件生成失败', 'error');
+      showToast('事件记录生成失败', 'error');
     } finally {
       setSeeding(false);
     }
@@ -450,7 +450,7 @@ export default function Incidents() {
           )}
           <button onClick={seedMockData} disabled={seeding} className="btn-ghost gap-2">
             <Sparkles className="h-4 w-4" />
-            <span>{seeding ? '生成中...' : '生成模拟事件'}</span>
+            <span>{seeding ? '生成中...' : '生成事件记录'}</span>
           </button>
           <button onClick={() => setShowForm(true)} className="btn-primary gap-2 shadow-lg shadow-slate-900/10">
             <Plus className="h-4 w-4" />
