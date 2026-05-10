@@ -1,149 +1,91 @@
 # 智能交通流量监测与预测系统
 
-本项目是一个面向城市路口级交通态势监测、预测与演示汇报的全栈系统。系统围绕 11 个核心路口节点构建，完成了“采集/生成数据 -> 数据冻结与补全 -> 模型训练 -> 预测服务 -> 可视化展示 -> 事件上报与路线建议”的完整闭环。
+本项目是一个面向本科毕业设计场景的城市路口级智能交通监测与预测系统。系统围绕 11 个固定交通节点构建，集成了交通数据采集、数据存储、短时速度预测、可视化监控、地图定位、事件调度、路线建议、用户认证与云端部署等功能，形成了从数据进入系统到前端展示与业务决策的完整闭环。
 
-当前仓库已经完成以下核心能力：
-
-- 11 节点统一建模与统一推理，节点为 `A1` 到 `K11`
-- 真实采集表与模拟采集表并存，可通过 `.env` 切换数据源
-- 训练集冻结到固定截止时间，避免训练数据持续漂移
-- LST-GCN 多时域直接监督训练，支持 `15/30/45/60` 分钟预测
-- Dashboard、Route、预测导出接口共用同一套预测逻辑
-- 登录、图形验证码、邮箱验证码、事件上报、地图聚焦、报表导出均已打通
+当前系统主体功能已经基本完成，适合用于毕业论文撰写、答辩演示和后续轻量级维护。后续主要工作建议集中在前端展示文案清理、演示数据整理、论文截图和答辩材料准备。
 
 ---
 
-## 1. 项目目标
+## 1. 项目定位
 
-系统目标不是单纯展示地图，而是构建一个可以解释、可以演示、可以持续迭代的数据驱动交通研判平台：
+系统目标不是单纯展示地图，而是构建一个可运行、可解释、可部署的交通状态研判平台。
 
-- 对重点路口进行持续交通状态监测
-- 通过历史与实时数据预测未来短时速度变化
-- 为调度人员提供事件记录、地图定位、趋势图表和通行建议
-- 在真实数据不足的情况下，利用模拟数据维持系统运行与前端演示
+主要能力包括：
 
----
+- 对 11 个路口节点进行持续交通状态监测
+- 基于历史窗口预测未来 `15/30/45/60` 分钟交通速度变化
+- 在 Dashboard 中展示全天速度曲线、实时状态和预测趋势
+- 在地图中定位路口节点，并根据交通状态进行可视化标注
+- 支持事件上报、受理、解决、忽略、重做和删除
+- 支持管理员与执行者两类用户身份
+- 支持模拟采集器在云端持续运行，保证电脑关闭后系统仍能产生数据
+- 支持 Nginx + systemd 云端部署，对外提供 Web 访问
 
-## 2. 数据来源与口径说明
+一句话概括：
 
-### 2.1 真实数据来源
-
-真实交通数据来源于高德地图路况接口，采集对象是 11 个固定路口节点周边的道路通行状态。高德 API 能直接提供的是：
-
-- 路段速度 `speed`
-- 拥堵状态 `congestion_status`
-- 路段空间覆盖信息，可进一步统计为 `road_count`
-
-地图展示同样基于高德地图 JavaScript SDK，前端地图页为 [frontend/src/pages/MapView.tsx](D:\Projects\VS_Code\traffic-system\frontend\src\pages\MapView.tsx)。
-
-### 2.2 当前真实采集数据时间范围
-
-训练冻结前的真实采集数据已经确认如下：
-
-- 真实采集表：`traffic_flow`
-- 原始样本量：`5359` 条
-- 原始时间范围：`2026-04-26 17:00:10` 到 `2026-05-05 04:59:15`
-- 训练冻结截止时间：`2026-05-05 05:00:00`
-
-对应冻结摘要见 [summary.json](D:\Projects\VS_Code\traffic-system\model\generated\train_20260505050000\summary.json)。
-
-### 2.3 采集频率说明
-
-这里有两个层面的口径，需要区分：
-
-- 代码当前真实采集器默认频率由 `.env` 中 `TRAFFIC_REAL_INTERVAL_SECONDS` 控制，生产样例默认是 `300` 秒，也就是 5 分钟一次
-- 模拟采集器默认频率由 `TRAFFIC_MOCK_INTERVAL_SECONDS` 控制，当前默认是 `60` 秒，也就是 1 分钟一次
-
-如果是项目答辩或演示口径，你要求的表述可以写成：
-
-> 演示中可说明“11 个路口的真实交通流量数据按 15 分钟粒度进行采集展示；预测数据与后续动态数据由系统自定义策略生成，用于补充训练与演示链路”。
-
-这句话适合汇报，但需要明确：它是“演示表达口径”，不是当前仓库默认运行参数。当前仓库实际运行频率仍以 `.env` 配置为准。
-
-### 2.4 为什么需要模拟数据
-
-高德 API 调用额度有限，无法支撑“全天候、1 分钟级、长周期”持续采集。结果就是：
-
-- 真实采集时间不连续
-- 数据跨度不足
-- 11 个节点的时空覆盖不均匀
-- 直接训练会让模型学习效果很差
-
-因此系统引入了两套补偿机制：
-
-1. 训练前先做“冻结 + 对齐 + 补全”，产出训练专用数据集
-2. 在线运行时新增模拟采集器，持续向 `traffic_flow_mock` 写入 11 个节点的新记录
+> 系统通过“真实数据采集 + 模拟数据补充 + LST-GCN 多时域预测 + 前后端可视化业务闭环”，实现了面向城市交通管理场景的短时交通状态监测与辅助决策。
 
 ---
 
-## 3. 数据表与数据流闭环
+## 2. 系统技术框架
 
-### 3.1 运行期核心表
+### 2.1 总体架构
 
-- `traffic_flow`
-  - 真实采集表
-  - 保留原始真实数据，不直接污染
-- `traffic_flow_mock`
-  - 模拟采集表
-  - 结构与真实表一致
-  - 用于无 API 或高频演示场景
-- `predictions`
-  - 保存每次预测快照
-  - 包含 `node_id`、`predicted_speed`、`predicted_at`、`horizon_minutes`、`target_at`、`source_table`
-- `incidents`
-  - 事件上报与处理表
-  - `type` 使用中文事件类型，如 `交通事故`、`道路施工`、`异常拥堵`、`信号灯故障`、`车辆故障`
-  - `description` 使用正常中文描述，后端会自动修复历史模拟数据中的乱码描述
-- `users`
-  - 用户登录、会话、角色与安全信息表
+系统采用前后端分离架构，并额外拆分出 Python AI 推理服务和 Python 数据采集服务。
 
-### 3.2 训练专用表
+```text
+浏览器前端
+  |
+  | HTTP / REST API
+  v
+Nginx
+  |
+  | /api 反向代理
+  v
+Node.js Express 后端
+  |             |
+  |             | HTTP
+  |             v
+  |        Python Flask AI 服务
+  |
+  | MySQL / Redis
+  v
+业务数据库与缓存
 
-- `traffic_flow_train_raw`
-  - 冻结后的训练原始快照
-- `traffic_flow_train_aligned`
-  - 按 5 分钟粒度对齐后的训练集
-- `training_dataset_versions`
-  - 冻结版本与摘要元信息
+Python Collector
+  |
+  v
+traffic_flow / traffic_flow_mock
+```
 
-### 3.3 数据闭环
+部署后，用户只需要访问前端地址，例如：
 
-完整数据流程如下：
+```text
+http://服务器公网 IP/
+```
 
-1. 真实采集器或模拟采集器写入 `traffic_flow` / `traffic_flow_mock`
-2. 后端根据配置读取当前启用的数据源
-3. 训练阶段使用 `prepareTrainingData.ts` 冻结真实数据，生成训练专用数据
-4. `model/train_real.py` 读取冻结后的对齐数据，训练多时域 LST-GCN
-5. 权重与元数据同步到 `ai_service`
-6. `ai_service/app.py` 提供统一预测接口
-7. `backend/src/index.ts` 负责组装模型窗口、触发预测、保存快照并对前端提供 API
-8. Dashboard、Route、导出接口、地图页、事件页消费这些 API
+如果后续配置域名，可以改为：
 
----
+```text
+http://your-domain.com/
+```
 
-## 4. 技术栈
+国内大陆云服务器使用域名正式访问通常需要完成 ICP 备案。
 
-### 4.1 前端
+### 2.2 技术选型
+
+前端：
 
 - React 19
 - TypeScript
 - Vite
-- Tailwind CSS 4
+- Tailwind CSS
 - Recharts
 - Motion
 - Lucide React
 - 高德地图 JavaScript SDK
 
-前端关键页面位于 `frontend/src/pages/`：
-
-- [Dashboard.tsx](D:\Projects\VS_Code\traffic-system\frontend\src\pages\Dashboard.tsx)
-- [MapView.tsx](D:\Projects\VS_Code\traffic-system\frontend\src\pages\MapView.tsx)
-- [Incidents.tsx](D:\Projects\VS_Code\traffic-system\frontend\src\pages\Incidents.tsx)
-- [Route.tsx](D:\Projects\VS_Code\traffic-system\frontend\src\pages\Route.tsx)
-- [Settings.tsx](D:\Projects\VS_Code\traffic-system\frontend\src\pages\Settings.tsx)
-- [Login.tsx](D:\Projects\VS_Code\traffic-system\frontend\src\pages\Login.tsx)
-
-### 4.2 后端
+后端：
 
 - Node.js
 - Express
@@ -152,271 +94,178 @@
 - Redis
 - Axios
 - node-cron
+- JWT / session token 认证
+- bcryptjs 密码加密
 
-后端入口是 [backend/src/index.ts](D:\Projects\VS_Code\traffic-system\backend\src\index.ts)。
-
-### 4.3 AI 服务
+AI 服务：
 
 - Python
 - Flask
 - PyTorch
-- NumPy / Pandas / Matplotlib
+- NumPy
+- SciPy
 
-AI 推理入口是 [ai_service/app.py](D:\Projects\VS_Code\traffic-system\ai_service\app.py)。
+数据采集：
 
-### 4.4 采集与部署
-
-- Python 采集器
+- Python
+- requests
+- PyMySQL
+- Redis
 - APScheduler
+
+部署运行：
+
+- Ubuntu 22.04 LTS
 - Nginx
 - systemd
-
-当前云端部署采用 Ubuntu 22.04 + Nginx + systemd：
-
-- `traffic-backend.service`：Node.js 后端
-- `traffic-ai.service`：Python AI 推理服务
-- `traffic-collector.service`：Python 采集器
-- Nginx：前端静态资源与 `/api` 反向代理
+- MySQL 8
+- Redis
 
 ---
 
-## 5. 模型训练数据更迭过程
-
-你要求 README 中明确说明“系统初期使用模拟数据预训练权重验证链路，后期用真实采集数据重新训练”，这里给出系统口径：
-
-### 5.1 初期阶段：用模拟数据验证全链路
-
-在系统刚搭建完成、真实数据量明显不足时，可以先使用模拟数据或人工生成数据跑通以下链路：
-
-- 训练脚本是否可执行
-- AI 服务是否能加载权重
-- 后端是否能正确构造窗口并调用预测
-- 前端图表和路线页是否能显示预测结果
-
-这一步的意义不是追求高精度，而是验证“从数据到页面”的工程闭环。
-
-### 5.2 后期阶段：用真实采集数据重新训练
-
-随着真实采集数据积累，系统切换到真实数据重训，当前仓库已经完成这一口径下的训练冻结：
-
-- 冻结版本：`train_20260505050000`
-- 原始真实行数：`5359`
-- 对齐后训练行数：`26928`
-- 时间桶数量：`2448`
-- 节点数：`11`
-- 粒度：`5` 分钟
-
-训练摘要说明：
-
-- 原始数据非常稀疏，观测占比只有 `0.154932`
-- 大量时间桶通过 `interpolate` 和 `spatial` 方式补全
-- `K11` 的观测最少，因此更依赖空间补全
-
-### 5.3 为什么要冻结训练集
-
-冻结训练集有三个目的：
-
-- 避免模型训练时数据不断变化，导致结果不可复现
-- 保留一份可以追溯的训练版本
-- 让线上运行数据与训练数据解耦
-
-冻结与补全脚本位于 [prepareTrainingData.ts](D:\Projects\VS_Code\traffic-system\backend\src\tools\prepareTrainingData.ts)。
-
----
-
-## 6. 训练原理与模型调用机制
-
-### 6.1 模型类型
-
-当前模型是多时域直接监督训练的 `LST-GCN`：
-
-- `GCN` 负责建模节点之间的空间关联
-- `LSTM` 负责建模时间序列变化
-- 输出层一次性预测多个未来时域
-
-训练脚本见 [model/train_real.py](D:\Projects\VS_Code\traffic-system\model\train_real.py)。
-
-### 6.2 节点与邻接矩阵
-
-系统统一采用 11 个节点顺序：
-
-`A1, B2, C3, D4, E5, F6, G7, H8, I9, J10, K11`
-
-邻接矩阵在训练脚本中显式定义，并写入元数据文件：
-
-- [lst_gcn_11nodes_metadata.json](D:\Projects\VS_Code\traffic-system\model\artifacts\train_20260505050000\lst_gcn_11nodes_metadata.json)
-
-后端和 AI 服务都依赖这份统一顺序，避免训练/推理节点错位。
-
-### 6.3 输入窗口长度、采样粒度、预测步长
-
-当前模型契约如下：
-
-- 输入窗口长度：`12`
-- 时间粒度：`5` 分钟
-- 输入覆盖时长：`12 x 5 = 60` 分钟
-- 支持预测时域：`15/30/45/60` 分钟
-- 对应预测步长：`3/6/9/12`
-
-这意味着：
-
-- Dashboard 的 15 分钟预测，本质是预测未来第 3 个 5 分钟桶
-- Route 的 30/45/60 分钟预测，本质是预测未来第 6/9/12 个 5 分钟桶
-
-### 6.4 为什么不是单步滚动预测
-
-系统已经做过一个关键优化：不再用“单步模型反复滚动”去预测 30/45/60 分钟，因为这样误差会累计。
-
-当前采用的是：
-
-- `direct_multi_horizon_supervision`
-- 一次前向同时输出 15/30/45/60 分钟结果
-
-训练指标文件见 [training_metrics_11nodes.json](D:\Projects\VS_Code\traffic-system\model\artifacts\train_20260505050000\training_metrics_11nodes.json)。
-
-当前测试集指标为：
-
-- `15min`: `MAE 3.1770`, `RMSE 4.6180`, `MAPE 8.7262%`
-- `30min`: `MAE 3.3691`, `RMSE 4.8239`, `MAPE 9.1368%`
-- `45min`: `MAE 3.8223`, `RMSE 5.1951`, `MAPE 10.4247%`
-- `60min`: `MAE 3.6398`, `RMSE 5.1076`, `MAPE 10.0174%`
-
-### 6.5 预测服务调用原理
-
-预测调用分三层：
-
-1. 后端从当前启用的数据表中取最近一段数据
-2. [trafficWindow.ts](D:\Projects\VS_Code\traffic-system\backend\src\trafficWindow.ts) 按 5 分钟聚合、补齐窗口，形成长度为 12 的 `window`
-3. 后端把 `window` POST 到 AI 服务 `/predict`
-
-AI 服务返回：
-
-- 主预测 `predictions`
-- 主时域 `primary_horizon_minutes`
-- 全部多时域预测 `multi_horizon_predictions`
-
-后端再把结果：
-
-- 写入 `predictions` 表
-- 提供给 Dashboard、Route、导出接口复用
-
----
-
-## 7. 模拟采集器原理
-
-模拟采集器见 [collector/mock_collector.py](D:\Projects\VS_Code\traffic-system\collector\mock_collector.py)。
-
-它不是简单随机数，而是按交通规律构造：
-
-- 按时间段生成基础速度分布
-  - 早高峰、午高峰、晚高峰速度下降
-  - 夜间速度回升
-- 引入节点偏置
-  - 每个路口有自己的基础快慢差异
-- 引入空间联动
-  - 邻接节点会互相影响
-- 引入随机扰动
-  - 让数据不至于完全平滑
-- 可选引入突发事件扰动
-  - 某个节点速度骤降，并波及邻居
-- 优先参考历史训练画像
-  - 如果 `aligned.csv` 中存在该分钟附近的历史模式，会优先用历史模式插值
-
-它支持：
-
-- 每分钟写入 11 条记录
-- 写入表结构与真实采集一致
-- 更新 Redis 的 `traffic:latest:mock` 缓存
-
-运行模式由 `.env` 控制：
-
-- `TRAFFIC_COLLECTION_MODE=off`
-- `TRAFFIC_COLLECTION_MODE=real`
-- `TRAFFIC_COLLECTION_MODE=mock`
-
-读取数据源由 `TRAFFIC_READ_SOURCE` 决定：
-
-- `real` 读 `traffic_flow`
-- `mock` 读 `traffic_flow_mock`
-
-实现见 [trafficSource.ts](D:\Projects\VS_Code\traffic-system\backend\src\trafficSource.ts)。
-
----
-
-## 8. 用户登录逻辑与用户表设计
-
-### 8.1 登录方式
-
-系统支持三种用户进入方式：
-
-1. 用户名 + 密码 + 图形验证码登录
-2. 邮箱 + 邮箱验证码登录
-3. 用户注册后自动创建会话
-
-实现文件是 [auth.ts](D:\Projects\VS_Code\traffic-system\backend\src\auth.ts)。
-
-### 8.2 登录核心流程
-
-#### 账号密码登录
-
-1. 前端先请求 `/api/auth/captcha`
-2. 用户输入图形验证码
-3. 前端提交 `/api/auth/login`
-4. 后端校验验证码
-5. 查询 `users`
-6. 使用 `bcrypt` 校验密码
-7. 生成 `session_token`
-8. 写回 `token_expires_at`、`last_login_time`、`last_login_ip`
-
-#### 邮箱验证码登录
-
-1. 前端先获取图形验证码
-2. 提交 `/api/auth/email/send`
-3. 后端校验图形验证码
-4. 生成 6 位邮箱验证码并写入缓存
-5. 前端提交 `/api/auth/email-login`
-6. 若邮箱不存在则自动创建用户
-7. 创建登录会话
-
-### 8.3 图形验证码与防刷机制
-
-当前验证码确实是 `Redis + 进程内存兜底` 的方案，不是纯终端控制台方案。
-
-具体逻辑：
-
-- 图形验证码缓存键：`captcha:<captchaId>`
-- 邮箱验证码缓存键：`email:<email>`
-- 刷新频率限制：`captcha:rate:<ip>`
-- 邮箱验证码发送频率限制：`email:rate:<ip>`
-
-实现特征：
-
-- 优先写 Redis
-- Redis 不可用时退回到进程内 `memoryStore`
-- 图形验证码默认 5 分钟过期
-- 邮箱验证码默认 10 分钟过期
-- 邮箱验证码发送默认 60 秒限流
-
-是否在终端输出验证码由环境变量控制：
-
-- `AUTH_DEV_LOG_CODES=true`：开发模式打印验证码
-- `AUTH_DEV_LOG_CODES=false`：生产模式不打印
-
-邮箱验证码需要配置 SMTP 发信账号。开发环境可把所有验证码实际投递到同一个测试邮箱：
-
-```env
-EMAIL_SMTP_HOST=smtp.qq.com
-EMAIL_SMTP_PORT=465
-EMAIL_SMTP_SECURE=true
-EMAIL_SMTP_USER=3379556417@qq.com
-EMAIL_SMTP_PASS=QQ 邮箱 SMTP 授权码
-EMAIL_FROM=智能交通系统 <3379556417@qq.com>
-EMAIL_TEST_RECIPIENT=3379556417@qq.com
+## 3. 目录结构
+
+```text
+traffic-system
+├── frontend/              # React 前端
+├── backend/               # Node.js + Express 后端
+├── ai_service/            # Python Flask AI 推理服务
+├── collector/             # 真实/模拟交通数据采集器
+├── model/                 # 模型训练脚本、训练数据与模型权重
+├── deploy/                # 部署说明与服务配置资料
+├── README.md              # 项目说明文档
+└── .env                   # 本地/云端环境变量，不提交仓库
 ```
 
-### 8.4 用户表设计
+核心文件索引：
 
-`users` 表由后端自动迁移创建，核心字段包括：
+- 前端入口：`frontend/src/main.tsx`
+- Dashboard 页面：`frontend/src/pages/Dashboard.tsx`
+- 地图页面：`frontend/src/pages/MapView.tsx`
+- 事件页面：`frontend/src/pages/Incidents.tsx`
+- 路线建议页面：`frontend/src/pages/Route.tsx`
+- 设置页面：`frontend/src/pages/Settings.tsx`
+- 登录页面：`frontend/src/pages/Login.tsx`
+- 后端入口：`backend/src/index.ts`
+- 认证模块：`backend/src/auth.ts`
+- 数据源切换：`backend/src/trafficSource.ts`
+- 预测窗口构造：`backend/src/trafficWindow.ts`
+- 训练数据冻结：`backend/src/tools/prepareTrainingData.ts`
+- 预测回填：`backend/src/tools/backfillPredictions.ts`
+- AI 推理服务：`ai_service/app.py`
+- 真实采集器：`collector/real_collector.py`
+- 模拟采集器：`collector/mock_collector.py`
+- 采集器入口：`collector/run_collector.py`
+- 模型训练脚本：`model/train_real.py`
+
+---
+
+## 4. 数据来源与数据口径
+
+### 4.1 真实交通数据
+
+真实交通数据来源于高德地图路况接口。系统围绕 11 个固定路口节点采集周边道路交通状态。
+
+真实接口主要提供：
+
+- `speed`：路段速度
+- `congestion_status`：拥堵状态
+- `road_count`：采样范围内统计到的道路数量
+
+其中 `congestion_status` 沿用高德路况含义：
+
+- `1`：畅通
+- `2`：缓行
+- `3`：拥堵
+- `4`：严重拥堵
+
+### 4.2 为什么使用速度作为预测目标
+
+普通开发者通常无法直接从开放地图 API 获取“路口单位时间车辆数量”。车辆计数通常依赖摄像头、地感线圈、信号机或交管部门专有数据。
+
+本系统采用速度作为交通状态代理变量，原因是：
+
+- 速度能够直接反映道路通行效率
+- 速度与交通流密度、拥堵程度存在明显关联
+- 许多短时交通预测研究也以速度作为预测对象
+- 高德接口能够稳定返回速度字段，工程可实现性更高
+
+论文中可以这样表述：
+
+> 本系统以路段平均速度作为交通状态预测目标。虽然速度并不等同于交通流量，但在交通流理论中，速度、密度和流量之间存在紧密关系。速度下降通常意味着道路通行效率下降和拥堵风险上升，因此速度可作为交通运行状态的有效代理变量。
+
+### 4.3 模拟数据的必要性
+
+由于高德 API 调用额度有限，真实数据存在采样不连续、节点覆盖不均和时间跨度不足的问题。为了保证系统可持续运行和演示效果，项目引入模拟采集器。
+
+模拟采集器不是简单随机数，而是综合考虑：
+
+- 日内时间规律
+- 早高峰、午高峰、晚高峰
+- 各节点基础速度差异
+- 相邻节点联动影响
+- 随机扰动
+- 可选突发事件扰动
+- 历史训练画像
+
+模拟数据写入 `traffic_flow_mock`，真实数据写入 `traffic_flow`。后端通过环境变量决定读取哪张表。
+
+---
+
+## 5. 数据库设计
+
+### 5.1 运行期核心表
+
+`traffic_flow`
+
+- 真实交通采集表
+- 保存高德接口采集结果
+
+`traffic_flow_mock`
+
+- 模拟交通采集表
+- 字段结构与真实表一致
+- 云端持续运行时主要使用该表支撑演示
+
+`predictions`
+
+- 模型预测快照表
+- 保存不同节点、不同时域的预测结果
+
+核心字段包括：
+
+- `node_id`
+- `predicted_speed`
+- `predicted_at`
+- `horizon_minutes`
+- `target_at`
+- `source_table`
+
+`incidents`
+
+- 交通事件表
+- 支持事件上报、受理、解决、忽略、重做和删除
+
+核心字段包括：
+
+- `id`
+- `node_id`
+- `type`
+- `description`
+- `severity`
+- `status`
+- `reporter_id`
+- `handler_id`
+- `handled_at`
+- `created_at`
+- `updated_at`
+
+`users`
+
+- 用户表
+- 支持账号密码登录、邮箱验证码登录、角色管理和会话维护
+
+核心字段包括：
 
 - `id`
 - `username`
@@ -434,33 +283,213 @@ EMAIL_TEST_RECIPIENT=3379556417@qq.com
 - `created_at`
 - `updated_at`
 
-角色体系：
+### 5.2 训练专用表
+
+`traffic_flow_train_raw`
+
+- 训练冻结后的原始快照
+
+`traffic_flow_train_aligned`
+
+- 按 5 分钟粒度对齐、补全后的训练数据
+
+`training_dataset_versions`
+
+- 保存训练数据版本、冻结时间和摘要信息
+
+### 5.3 用户角色设计
+
+系统角色包括：
 
 - `管理员`
 - `执行者`
 
-`role_id` 采用编码方式：
+`role_id` 使用编码方式：
 
 - 管理员：`G0001` 起
 - 执行者：`S0001` 起
 
-系统会自动修复历史数据中不规范的 `role_id`。
+系统会自动修复历史用户数据中缺失或不规范的 `role_id`。
 
-### 8.5 事件表设计
+---
 
-`incidents` 表由后端自动迁移创建，核心字段包括：
+## 6. 交通预测模型
 
-- `id`
-- `node_id`
-- `type`
-- `description`
-- `severity`
-- `status`
-- `reporter_id`
-- `handler_id`
-- `handled_at`
-- `created_at`
-- `updated_at`
+### 6.1 模型类型
+
+当前模型采用 LST-GCN，即 LSTM 与 GCN 结合的时空预测模型。
+
+- GCN 用于建模路口节点之间的空间关联
+- LSTM 用于建模速度序列的时间变化
+- 输出层一次性预测多个未来时域
+
+训练脚本：
+
+```text
+model/train_real.py
+```
+
+### 6.2 节点定义
+
+系统统一采用 11 个节点：
+
+```text
+A1, B2, C3, D4, E5, F6, G7, H8, I9, J10, K11
+```
+
+训练、后端窗口构造、AI 服务推理和前端展示都必须使用同一节点顺序，避免模型输入输出错位。
+
+### 6.3 输入窗口与预测时域
+
+当前模型配置：
+
+- 时间粒度：`5` 分钟
+- 输入窗口长度：`12`
+- 输入覆盖时长：`60` 分钟
+- 预测时域：`15/30/45/60` 分钟
+- 对应步长：`3/6/9/12`
+
+也就是说，模型使用最近 1 小时交通状态，预测未来 15 到 60 分钟的速度。
+
+### 6.4 多时域直接预测
+
+系统没有采用单步滚动预测，而是采用多时域直接监督：
+
+```text
+输入最近 12 个时间桶 -> 一次输出 15/30/45/60 分钟预测
+```
+
+这样可以减少滚动预测中的误差累积，更适合 Dashboard 和 Route 页面直接读取不同未来时域。
+
+### 6.5 当前训练版本
+
+当前真实数据训练冻结版本：
+
+- 版本：`train_20260505050000`
+- 原始真实样本量：`5359`
+- 原始时间范围：`2026-04-26 17:00:10` 到 `2026-05-05 04:59:15`
+- 冻结截止时间：`2026-05-05 05:00:00`
+- 对齐后训练行数：`26928`
+- 时间桶数量：`2448`
+- 节点数：`11`
+- 粒度：`5` 分钟
+
+当前测试集指标：
+
+| 预测时域 | MAE | RMSE | MAPE |
+| --- | ---: | ---: | ---: |
+| 15min | 3.1770 | 4.6180 | 8.7262% |
+| 30min | 3.3691 | 4.8239 | 9.1368% |
+| 45min | 3.8223 | 5.1951 | 10.4247% |
+| 60min | 3.6398 | 5.1076 | 10.0174% |
+
+训练摘要文件：
+
+```text
+model/generated/train_20260505050000/summary.json
+model/artifacts/train_20260505050000/training_metrics_11nodes.json
+model/artifacts/train_20260505050000/lst_gcn_11nodes_metadata.json
+```
+
+---
+
+## 7. 后端预测调用机制
+
+预测调用链路如下：
+
+1. 后端从当前数据源读取最新交通数据
+2. `trafficWindow.ts` 将数据按 5 分钟粒度聚合
+3. 对缺失时间桶进行补齐，形成长度为 12 的输入窗口
+4. 后端调用 Python AI 服务 `/predict`
+5. AI 服务返回多时域预测结果
+6. 后端写入 `predictions` 表
+7. Dashboard、Route、导出接口复用预测结果
+
+系统中有两类预测触发方式：
+
+- 定时预测：后端通过 `node-cron` 周期性触发
+- 手动触发：前端或接口调用 `/api/predict/trigger`
+
+---
+
+## 8. 页面功能
+
+### 8.1 Login 登录页
+
+文件：
+
+```text
+frontend/src/pages/Login.tsx
+```
+
+功能：
+
+- 用户名 + 密码登录
+- 邮箱验证码登录
+- 用户注册
+- 图形验证码
+- 登录后保存会话 token
+
+认证接口位于：
+
+```text
+backend/src/auth.ts
+```
+
+### 8.2 Dashboard 首页
+
+文件：
+
+```text
+frontend/src/pages/Dashboard.tsx
+```
+
+功能：
+
+- 展示 11 个节点当前交通状态
+- 展示某节点当天 `00:00-24:00` 速度曲线
+- 同图展示实际速度与 15 分钟预测速度
+- 标注早高峰、午高峰、晚高峰背景
+- 支持图表缩放和日期选择
+
+最近已经对 Dashboard 数据进行了回填，使当天 00:00 起有较合理的交通速度曲线，避免图表出现异常断裂或视觉错乱。
+
+### 8.3 MapView 地图页
+
+文件：
+
+```text
+frontend/src/pages/MapView.tsx
+```
+
+功能：
+
+- 高德地图展示 11 个交通节点
+- 根据拥堵状态设置节点颜色
+- 点击节点查看信息
+- 支持从事件页携带 `node` 参数跳转并定位
+- 支持全屏查看
+
+### 8.4 Incidents 事件页
+
+文件：
+
+```text
+frontend/src/pages/Incidents.tsx
+```
+
+功能：
+
+- 事件列表展示
+- 状态卡筛选：全部事件、待受理、处理中、已解决、已忽略
+- 关键词搜索
+- 分页展示
+- 用户可选择每页显示 `10/20/50/100` 条
+- 页码位于列表右下角
+- 上报事件
+- 生成模拟事件
+- 点击节点 ID 跳转地图页
+- 管理员更新员工身份信息
 
 事件状态：
 
@@ -469,307 +498,159 @@ EMAIL_TEST_RECIPIENT=3379556417@qq.com
 - `resolved`：已解决
 - `ignored`：已忽略
 
+事件权限规则：
+
+- 待受理事件：
+  - 如果 `handler_id` 为空，所有拥有合法 `role_id` 的用户都可以受理
+  - 如果 `handler_id` 为其他用户，当前用户不能受理
+  - 如果 `handler_id` 为当前登录用户，当前用户可以受理
+- 处理中事件：
+  - `handler_id` 必须非空
+  - 只有处理人可以点击解决和忽略
+  - 其他用户只能看到灰色不可点击按钮
+- 已解决事件：
+  - 操作按钮显示为重做
+  - 只有原处理人可以重做
+- 删除事件：
+  - 只有管理员可以删除
+  - 执行者点击删除时弹窗提示权限不足
+
 数据规范：
 
-- `type` 存储中文描述，不再使用 `accident`、`road_work` 等英文枚举展示给前端
-- 历史英文类型会自动修复为中文
-- 历史 `description` 中的 `妯℃嫙浜嬩欢` 等乱码会自动修复为 `模拟事件`
-- `active`、`resolved`、`ignored` 状态的事件必须有 `handler_id`
-- `reported` 状态的 `handler_id` 可以为空，也可以预先指定处理人
+- `type` 使用中文事件类型，例如 `交通事故`、`道路施工`、`异常拥堵`、`信号灯故障`、`车辆故障`
+- `description` 使用正常中文描述
+- 后端会自动修复历史模拟数据中的乱码描述
 
----
+### 8.5 Route 路线建议页
 
-## 9. 为什么用“速度”代替“车辆数量”描述交通状况
+文件：
 
-这是答辩中非常重要的一部分，系统的解释口径如下。
-
-### 9.1 `congestion_status` 不是我们主观定义的
-
-`congestion_status` 直接来自高德 API 返回字段，不是系统自己发明的标准。高德官方定义为：
-
-- `1 = 畅通`
-- `2 = 缓行`
-- `3 = 拥堵`
-- `4 = 严重拥堵`
-
-因此前端和后端只是沿用高德的拥堵状态解释。
-
-### 9.2 `road_count` 的含义
-
-采集脚本以路口坐标为圆心、半径约 100 米范围统计覆盖的路段数，得到 `road_count`。
-
-例如：
-
-- 如果 A1 周围覆盖到 3 条道路，则 `road_count = 3`
-
-它的主要作用是描述这次采样覆盖面，而不是直接用于模型推理。当前系统中：
-
-- 已存储
-- 训练数据冻结时会保留
-- 前端和推理阶段暂未作为主要特征使用
-
-### 9.3 为什么拿不到车辆数
-
-高德本质上是导航与路况服务商，普通开发者通常拿不到“单位时间通过路口的车辆计数”。真正的车辆数往往依赖：
-
-- 路口摄像头
-- 地感线圈
-- 交警部门信号机数据
-
-这些通常不对普通开发场景开放。
-
-### 9.4 学术上为什么速度可以作为代理变量
-
-交通流理论中有经典的速度-流量-密度关系，Greenshields 模型可以概括为：
-
-- 流量 `q = 速度 v × 密度 k`
-- 随着密度升高，速度通常下降
-- 当密度超过临界值，通行能力也会下降，拥堵加剧
-
-所以：
-
-- 速度不是车辆数本身
-- 但速度可以作为交通状态的高价值代理变量
-
-在交通预测研究中，这种做法是被广泛接受的，很多论文直接预测的目标也是速度。
-
----
-
-## 10. 页面功能与业务流程
-
-### 10.1 登录页 Login
-
-文件：[Login.tsx](D:\Projects\VS_Code\traffic-system\frontend\src\pages\Login.tsx)
+```text
+frontend/src/pages/Route.tsx
+```
 
 功能：
 
-- 账号密码登录
-- 邮箱验证码登录
-- 注册新用户
-- 图形验证码刷新
-- 登录后进入 Dashboard 或引导到 Settings 设置密码
+- 选择路口节点和未来时域
+- 查看 30/45/60 分钟预测速度
+- 展示速度变化幅度
+- 输出通行建议
 
-流程：
+建议类型：
 
-1. 请求图形验证码
-2. 用户输入账号/密码或邮箱/邮箱验证码
-3. 后端验证后签发会话
-4. token 存储到 `localStorage`
+- 建议通行
+- 谨慎通行
+- 建议绕行
 
-### 10.2 Dashboard 页面
-
-文件：[Dashboard.tsx](D:\Projects\VS_Code\traffic-system\frontend\src\pages\Dashboard.tsx)
-
-功能：
-
-- 展示 11 节点最新交通摘要
-- 按日期查看 `00:00-24:00` 日内速度曲线
-- 实际数据与 15 分钟预测同图展示
-- 高峰时段背景标注
-- 支持图表缩放与局部放大
-
-核心流程：
-
-1. 调用 `/api/traffic/latest` 获取当前概况
-2. 调用 `/api/dashboard/chart?node_id=...&date=...&horizon=15`
-3. 后端从实际数据表与 `predictions` 表拼接同一天曲线
-4. 前端以折线形式展示“历史/实际 + 15 分钟预测”
-
-说明：
-
-- 当前 Dashboard 主要使用 `15` 分钟预测
-- 图表的预测点是按 `target_at` 落点，而不是按生成时间落点
-
-### 10.3 地图页 MapView
-
-文件：[MapView.tsx](D:\Projects\VS_Code\traffic-system\frontend\src\pages\MapView.tsx)
-
-功能：
-
-- 高德底图展示 11 个路口节点
-- 根据实时状态着色
-- 支持节点点击聚焦
-- 支持从事件页跳转并自动定位到对应路口
-- 支持全屏查看
-
-核心流程：
-
-1. 调用 `/api/traffic/latest`
-2. 在地图上绘制 CircleMarker
-3. 根据 `congestion_status` 设置颜色
-4. 如果 URL 中带 `?node=A1`，则自动聚焦对应节点
-
-### 10.4 事件页 Incidents
-
-文件：[Incidents.tsx](D:\Projects\VS_Code\traffic-system\frontend\src\pages\Incidents.tsx)
-
-功能：
-
-- 查看事件列表
-- 根据状态筛选事件，顶部状态卡包括 `全部事件`、`待受理`、`处理中`、`已解决`、`已忽略`
-- 上报新事件
-- 管理员分配/修改处理身份
-- 点击节点 ID 跳转地图页聚焦对应路口
-
-核心流程：
-
-1. 调用 `/api/incidents`
-2. 页面会调用 `/api/auth/me` 同步当前登录账号与 `role_id`
-3. 如需用户下拉列表，则调用 `/api/auth/users`
-4. 新增事件时 POST `/api/incidents`
-5. 更新状态时 PUT `/api/incidents/:id`
-6. 删除事件时 DELETE `/api/incidents/:id`
-
-事件操作规则：
-
-- 待受理：
-  - 如果 `handler_id` 为空，所有拥有合法 `role_id` 的用户都可以点击 `受理`
-  - 如果 `handler_id` 指向其他用户，当前用户的 `受理` 按钮灰色不可点
-  - 如果 `handler_id` 等于当前登录用户 `role_id`，当前用户可以点击 `受理`
-- 处理中：
-  - 事件已经被受理，`handler_id` 必须非空
-  - 只有 `handler_id` 对应用户可以点击 `解决` 和 `忽略`
-  - 其他用户看到灰色不可点击按钮
-- 已解决：
-  - 操作按钮显示为 `重做`
-  - 只有原处理人可以点击 `重做`，重做后事件回到 `处理中`
-- 已忽略：
-  - 作为独立筛选状态展示
-- 删除：
-  - 只有管理员可以删除事件
-  - 执行者点击删除时，页面弹出权限提示
-
-三类入口约束：
-
-- 生成模拟事件：`active`、`resolved`、`ignored` 状态都会生成处理人 ID；`reported` 状态可以为空或指定处理人
-- 上报事件：上报人默认使用当前登录账号 `role_id`，处理人 ID 可选
-- 列表呈现：按钮可用性由当前登录账号 `role_id`、事件 `status` 和 `handler_id` 共同决定
-
-### 10.5 Route 页面
-
-文件：[Route.tsx](D:\Projects\VS_Code\traffic-system\frontend\src\pages\Route.tsx)
-
-功能：
-
-- 查看 30/45/60 分钟多时域通行建议
-- 多节点对比
-- 展示当前速度、预测速度、变化幅度、推荐原因、评分
-
-核心流程：
-
-1. 前端选择节点和时域
-2. 调用 `/api/route/outlook`
-3. 后端统一构造模型窗口并调用 AI 服务
-4. 根据预测速度和速度变化构造评分与建议
-
-当前建议逻辑不是简单“速度阈值翻译”，而是综合：
+建议逻辑综合考虑：
 
 - 当前速度
 - 预测速度
 - 速度下降幅度
 - 低速惩罚
 
-最终输出：
+### 8.6 Settings 设置页
 
-- `建议通行`
-- `谨慎通行`
-- `建议绕行`
+文件：
 
-### 10.6 Settings 页面
-
-文件：[Settings.tsx](D:\Projects\VS_Code\traffic-system\frontend\src\pages\Settings.tsx)
+```text
+frontend/src/pages/Settings.tsx
+```
 
 功能：
 
-- 用户资料查看与编辑
+- 用户资料查看和编辑
 - 头像上传
-- 密码设置/修改
-- 邮箱绑定与邮箱验证码校验
+- 密码设置与修改
+- 邮箱绑定
+- 邮箱验证码
 - 历史数据导出
 - 预测报表导出
-- 系统说明内嵌展示
-
-导出接口：
-
-- `/api/report/export`
-- `/api/report/predict-export`
+- 系统说明展示
 
 ---
 
-## 11. 后端主要接口
+## 9. 事件业务流程
 
-### 11.1 健康检查
+### 9.1 上报事件
+
+用户填写：
+
+- 路口节点
+- 事件类型
+- 描述
+- 风险等级
+- 上报人 ID
+- 处理人 ID，可选
+
+后端校验：
+
+- 上报人 ID 必须存在于 `users.role_id`
+- 处理人 ID 如果填写，也必须存在于 `users.role_id`
+- 新事件默认状态为 `reported`
+
+### 9.2 受理事件
+
+当事件为 `reported`：
+
+- 若 `handler_id` 为空，点击受理后后端自动把当前用户 `role_id` 写入 `handler_id`
+- 若 `handler_id` 已指定，则只有指定用户可以受理
+- 受理成功后状态变为 `active`
+
+### 9.3 处理事件
+
+当事件为 `active`：
+
+- 只有处理人可以点击解决或忽略
+- 点击解决后状态变为 `resolved`
+- 点击忽略后状态变为 `ignored`
+- 后端记录 `handled_at`
+
+### 9.4 重做事件
+
+当事件为 `resolved`：
+
+- 按钮显示为重做
+- 只有原处理人可以点击
+- 点击后状态回到 `active`
+
+---
+
+## 10. 后端主要 API
+
+健康检查：
 
 - `GET /api/health`
 
-返回当前：
-
-- 数据源类型
-- 当前读取表
-- 模型粒度
-- 窗口长度
-- AI 服务地址
-
-### 11.2 交通数据接口
+交通数据：
 
 - `GET /api/traffic/latest`
 - `GET /api/traffic/history`
 
-### 11.3 预测接口
+预测：
 
 - `POST /api/predict/trigger`
-  - 触发一次预测并把结果写入 `predictions`
 - `GET /api/predict/latest`
-  - 获取最新某时域预测
 - `GET /api/predict/outlook`
-  - 获取某节点多个时域的最新预测快照
 
-### 11.4 Dashboard 专用接口
+Dashboard：
 
 - `GET /api/dashboard/chart`
 
-职责：
-
-- 输入：日期 + 节点 + 时域
-- 输出：当天实际曲线 + 当天预测曲线
-
-### 11.5 Route 专用接口
+Route：
 
 - `GET /api/route/decision`
 - `GET /api/route/outlook`
 
-职责：
-
-- 提供当前速度、预测速度、变化幅度、建议、评分与原因解释
-
-### 11.6 事件接口
+事件：
 
 - `GET /api/incidents`
-  - 返回最近 50 条事件
-  - 返回前会兜底规范化历史英文 `type` 与乱码 `description`
 - `POST /api/incidents`
-  - 需要登录
-  - 新建事件默认状态为 `reported`
-  - `reporter_id` 必须存在于 `users.role_id`
-  - `handler_id` 可为空；如果填写，必须存在于 `users.role_id`
 - `PUT /api/incidents/:id`
-  - 需要登录
-  - `reported -> active` 表示受理
-  - `active -> resolved` 表示解决
-  - `active -> ignored` 表示忽略
-  - `resolved -> active` 表示重做
-  - 受理空处理人事件时，后端会把当前用户 `role_id` 写入 `handler_id`
-  - 有指定处理人的事件只能由指定用户受理
-  - 处理中事件只能由处理人解决或忽略
 - `DELETE /api/incidents/:id`
-  - 需要登录
-  - 仅管理员可删除
 - `POST /api/incidents/mock-seed`
-  - 生成演示用模拟事件
-  - 写入中文 `type` 与正常中文 `description`
-  - 非待受理状态会保证 `handler_id` 非空
 
-### 11.7 认证接口
+认证：
 
 - `GET /api/auth/captcha`
 - `POST /api/auth/email/send`
@@ -777,24 +658,21 @@ EMAIL_TEST_RECIPIENT=3379556417@qq.com
 - `POST /api/auth/email-login`
 - `POST /api/auth/register`
 - `GET /api/auth/me`
+- `GET /api/auth/users`
+- `POST /api/auth/users/:id/role`
 - `POST /api/auth/change-password`
 - `POST /api/auth/profile`
 
+报表：
+
+- `GET /api/report/export`
+- `GET /api/report/predict-export`
+
 ---
 
-## 12. 运行方式
+## 11. 本地运行
 
-### 12.1 本地开发
-
-后端：
-
-```powershell
-cd backend
-npm install
-npm run dev
-```
-
-前端：
+### 11.1 前端
 
 ```powershell
 cd frontend
@@ -802,57 +680,73 @@ npm install
 npm run dev
 ```
 
-AI 服务：
+### 11.2 后端
+
+```powershell
+cd backend
+npm install
+npm run dev
+```
+
+### 11.3 AI 服务
 
 ```powershell
 pip install -r ai_service\requirements.txt
 python ai_service\app.py
 ```
 
-模拟采集器单次执行：
+### 11.4 采集器
+
+单次执行：
 
 ```powershell
 python collector\run_collector.py --once
 ```
 
-模拟采集器持续运行：
+持续运行：
 
 ```powershell
 python collector\run_collector.py
 ```
 
-训练数据冻结：
+### 11.5 模型训练
+
+冻结训练数据：
 
 ```powershell
 cd backend
 npm run prepare-train-data
 ```
 
-重新训练模型：
+重新训练：
 
 ```powershell
 python model\train_real.py
 ```
 
-### 12.2 生产部署建议
+---
 
-当前云端生产结构是：
+## 12. 云端部署
 
-- Ubuntu 22.04 LTS 云服务器
-- Nginx：静态前端 + `/api` 反向代理到 `127.0.0.1:3001`
-- systemd：托管 Node 后端、AI 服务和采集器
-- MySQL：业务数据与交通数据
-- Redis：验证码、限流、缓存
+当前云端部署方式：
 
-云端服务名称：
+- Ubuntu 22.04 LTS
+- MySQL 8
+- Redis
+- Node.js 20
+- Python 3.10
+- Nginx
+- systemd
 
-```bash
+systemd 服务：
+
+```text
 traffic-backend.service
 traffic-ai.service
 traffic-collector.service
 ```
 
-常用维护命令：
+常用命令：
 
 ```bash
 systemctl status traffic-backend traffic-ai traffic-collector --no-pager
@@ -860,6 +754,7 @@ journalctl -u traffic-backend -f
 journalctl -u traffic-ai -f
 journalctl -u traffic-collector -f
 systemctl restart traffic-backend traffic-ai traffic-collector
+systemctl reload nginx
 ```
 
 Nginx 对外暴露：
@@ -869,26 +764,37 @@ http://服务器公网 IP/
 http://服务器公网 IP/api/health
 ```
 
-安全组建议只长期开放：
+建议安全组长期开放：
 
 ```text
 22/tcp  SSH
 80/tcp  HTTP
+443/tcp HTTPS，可选
 ```
 
-`3001` 和 `5001` 只在服务器本机监听使用，不建议直接公网开放。
+不建议公网直接开放：
 
-如果本地电脑关机，云端仍会继续运行：
+```text
+3001  后端服务端口
+5001  AI 服务端口
+3306  MySQL
+6379  Redis
+```
 
-- 采集器持续写入 `traffic_flow_mock`
-- 后端定时任务每 5 分钟触发预测
-- 前端通过 Nginx 访问云端后端 API
+如果配置域名：
 
-### 12.3 云端代码更新流程
+1. 购买域名
+2. 完成实名认证
+3. 如果服务器位于中国大陆，完成 ICP 备案
+4. 添加 A 记录指向服务器公网 IP
+5. 修改 Nginx `server_name`
+6. 可选配置 HTTPS 证书
 
-本地代码修改后，推荐流程：
+---
 
-1. 本地提交并推送到 GitHub
+## 13. 云端代码更新流程
+
+本地修改后：
 
 ```powershell
 git add .
@@ -896,59 +802,50 @@ git commit -m "update feature"
 git push
 ```
 
-2. 云服务器拉取并重新构建
+云端更新：
 
 ```bash
 cd /opt/traffic-system
 git pull
-
-cd backend
-npm install
-npm run build
-
-cd ../frontend
-npm install
-npm run build
 ```
 
-3. 重启受影响的服务
+只改前端：
 
 ```bash
-systemctl restart traffic-backend
-systemctl restart traffic-ai
-systemctl restart traffic-collector
+cd /opt/traffic-system/frontend
+npm install
+npm run build
 systemctl reload nginx
 ```
 
-说明：
-
-- 只改前端：重新 `frontend npm run build` 后 `systemctl reload nginx`
-- 只改后端：重新 `backend npm run build` 后 `systemctl restart traffic-backend`
-- 只改采集器：`systemctl restart traffic-collector`
-- 只改 AI 服务：`systemctl restart traffic-ai`
-- `.env` 不提交到 GitHub，云端保留自己的 `/opt/traffic-system/.env`
-
-### 12.4 数据库迁移与备份
-
-本地 MySQL 迁移到云端时使用 `mysqldump` 导出：
-
-```powershell
-mysqldump --host=localhost --user=root --default-character-set=utf8mb4 --single-transaction --routines --triggers --result-file=deploy_backup\traffic_YYYYMMDD.sql traffic
-```
-
-上传到云服务器后导入：
+只改后端：
 
 ```bash
-mysql -utraffic_user -p traffic < /home/ubuntu/traffic_YYYYMMDD.sql
+cd /opt/traffic-system/backend
+npm install
+npm run build
+systemctl restart traffic-backend
 ```
 
-导入成功后，服务器上的 `.sql` 文件不再是运行依赖，可以删除或离线归档。该文件可能包含用户、会话、事件和交通数据，不能提交到仓库，也不建议长期放在公网服务器用户目录中。
+只改 AI 服务：
+
+```bash
+systemctl restart traffic-ai
+```
+
+只改采集器：
+
+```bash
+systemctl restart traffic-collector
+```
+
+`.env` 不提交到 GitHub，本地和云端各自保留自己的环境变量。
 
 ---
 
-## 13. 重要环境变量
+## 14. 重要环境变量
 
-核心环境变量如下：
+示例：
 
 ```env
 DB_HOST=127.0.0.1
@@ -981,63 +878,127 @@ AUTH_CAPTCHA_RATE_SECONDS=2
 
 说明：
 
-- `TRAFFIC_COLLECTION_MODE` 决定采集器写什么
-- `TRAFFIC_READ_SOURCE` 决定后端读什么
-- `AUTH_DEV_LOG_CODES` 决定验证码是否打印到控制台
+- `TRAFFIC_COLLECTION_MODE` 决定采集器写入真实数据还是模拟数据
+- `TRAFFIC_READ_SOURCE` 决定后端读取真实表还是模拟表
+- `MODEL_BUCKET_MINUTES` 与模型训练粒度一致
+- `MODEL_WINDOW_SIZE` 与模型输入窗口长度一致
+- `AUTH_DEV_LOG_CODES=false` 时验证码不会打印到控制台，适合生产环境
 
 ---
 
-## 14. 项目演示建议口径
+## 15. 数据库迁移与备份
 
-为了让答辩或演示更顺畅，推荐这样表述：
+本地导出：
 
-1. 系统监测 11 个核心路口节点，地图、图表、事件和路线建议围绕这 11 个节点统一展开。
-2. 真实交通状态最初来自高德路况接口，但由于额度限制，真实数据并不连续。
-3. 为了让系统具备持续运行与训练能力，我们增加了模拟采集器，形成真实数据与模拟数据双轨机制。
-4. 模型初期可用模拟数据验证工程链路，后期再基于冻结后的真实采集数据重训。
-5. 系统当前能对未来 15/30/45/60 分钟的路口平均速度做短时预测，并分别用于 Dashboard 与 Route 页面。
-6. Dashboard 侧重“历史 + 15 分钟预测 + 日内规律”，Route 侧重“多时域通行建议”。
+```powershell
+mysqldump --host=localhost --user=root --default-character-set=utf8mb4 --single-transaction --routines --triggers --result-file=deploy_backup\traffic_YYYYMMDD.sql traffic
+```
 
-如果现场一定要简化口径，可以说：
+云端导入：
 
-> 系统对 11 个重点路口进行周期性采集，结合模型预测未来短时交通速度变化，并将结果同步到地图、监控面板、路线建议与事件调度页面。
+```bash
+mysql -utraffic_user -p traffic < /home/ubuntu/traffic_YYYYMMDD.sql
+```
 
----
-
-## 15. 当前局限与后续优化方向
-
-### 15.1 当前局限
-
-- 真实采样仍然稀疏，补全数据比例较高
-- `road_count` 已存储但尚未进入主推理特征
-- 车辆数不可得，因此目前以速度作为代理变量
-- 模拟数据虽然比随机数更合理，但仍不等价于真实交通流
-
-### 15.2 后续优化方向
-
-- 引入更多真实采集周期，降低补全比例
-- 将天气、节假日、工作日/周末等外生变量纳入模型
-- 将 `road_count` 或历史事件作为辅助特征
-- 优化 Dashboard 中预测曲线与实际曲线的贴合度
-- 增加云端定时训练与权重自动发布能力
+导入成功后，`.sql` 文件不再是系统运行依赖。该文件可能包含用户、事件、会话和交通数据，不建议提交到仓库，也不建议长期保留在公网服务器用户目录。
 
 ---
 
-## 16. 代码索引
+## 16. 毕业论文可用技术描述
 
-- 后端入口：[backend/src/index.ts](D:\Projects\VS_Code\traffic-system\backend\src\index.ts)
-- 认证模块：[backend/src/auth.ts](D:\Projects\VS_Code\traffic-system\backend\src\auth.ts)
-- 数据源切换：[backend/src/trafficSource.ts](D:\Projects\VS_Code\traffic-system\backend\src\trafficSource.ts)
-- 模型窗口构造：[backend/src/trafficWindow.ts](D:\Projects\VS_Code\traffic-system\backend\src\trafficWindow.ts)
-- 训练数据冻结：[backend/src/tools/prepareTrainingData.ts](D:\Projects\VS_Code\traffic-system\backend\src\tools\prepareTrainingData.ts)
-- 训练脚本：[model/train_real.py](D:\Projects\VS_Code\traffic-system\model\train_real.py)
-- AI 推理服务：[ai_service/app.py](D:\Projects\VS_Code\traffic-system\ai_service\app.py)
-- 模拟采集器：[collector/mock_collector.py](D:\Projects\VS_Code\traffic-system\collector\mock_collector.py)
-- 采集调度入口：[collector/run_collector.py](D:\Projects\VS_Code\traffic-system\collector\run_collector.py)
-- 部署说明：[deploy/DEPLOYMENT.md](D:\Projects\VS_Code\traffic-system\deploy\DEPLOYMENT.md)
+### 16.1 系统设计
+
+本文设计并实现了一个基于 Web 的智能交通流量监测与预测系统。系统采用前后端分离架构，前端负责交通状态可视化与人机交互，后端负责业务接口、数据管理和预测调度，AI 服务负责模型推理，采集服务负责交通数据写入。通过模块化拆分，系统实现了数据采集、数据存储、模型预测、业务处理和可视化展示的解耦。
+
+### 16.2 数据处理
+
+系统针对真实采集数据稀疏、不连续的问题，设计了训练数据冻结与时间桶对齐机制。首先将真实采集数据冻结为可复现的数据版本，再按固定 5 分钟粒度进行对齐和缺失补全，最后形成模型训练所需的时序数据集。该方法能够避免训练数据随线上采集持续变化而产生不可复现问题。
+
+### 16.3 模型方法
+
+系统采用 LST-GCN 模型进行短时交通速度预测。GCN 用于捕捉不同路口节点之间的空间相关性，LSTM 用于捕捉交通速度随时间变化的动态特征。模型以最近 60 分钟的节点速度序列作为输入，直接输出未来 15、30、45、60 分钟的多时域预测结果。
+
+### 16.4 工程实现
+
+系统后端通过 Express 提供 RESTful API，并使用 MySQL 存储交通数据、预测结果、用户信息和事件信息。Redis 用于验证码、限流和实时缓存。前端使用 React 和 TypeScript 构建交互页面，通过 Recharts 展示趋势图，通过高德地图 SDK 展示空间位置，通过事件页面实现交通事件调度流程。云端部署采用 Nginx 反向代理和 systemd 服务托管，保证系统在本地电脑关闭后仍能持续运行。
+
+### 16.5 系统特色
+
+- 真实数据与模拟数据双轨运行
+- 统一 11 节点建模与推理
+- 多时域直接预测，减少滚动误差
+- Dashboard、Route、事件页共用同一套交通数据与预测结果
+- 支持云端持续采集、持续预测和公网访问
+- 事件处理流程结合用户身份与处理人 ID，具备基本权限约束
 
 ---
 
-## 17. 一句话总结
+## 17. 当前完成情况
 
-这个系统的核心价值在于：即使真实交通数据有限，也通过“冻结真实数据 + 补全训练集 + 持续模拟采集 + 多时域预测服务 + 前端统一展示”构建了一个完整、可解释、可部署、可演示的智能交通监测与预测闭环。
+已经完成：
+
+- 用户登录、注册、验证码、邮箱验证码
+- 用户身份管理，支持管理员与执行者
+- 交通数据采集与模拟采集
+- MySQL 数据存储
+- Redis 缓存与限流
+- 训练数据冻结与补全
+- LST-GCN 多时域预测
+- AI 推理服务
+- Dashboard 可视化
+- 地图节点展示与跳转定位
+- Route 路线建议
+- Incidents 事件完整流程
+- 事件列表搜索、状态筛选和分页
+- 报表导出
+- 云服务器部署
+- 电脑关闭后云端采集器持续运行
+
+建议收尾事项：
+
+- 手动清理前端仍不适合答辩展示的说明性文字
+- 统一论文截图中的数据日期和节点选择
+- 配置正式域名与 HTTPS，可选
+- 准备答辩演示账号
+- 定期备份云端 MySQL 数据
+
+---
+
+## 18. 当前局限与后续优化
+
+当前局限：
+
+- 真实采集数据仍然偏少，部分训练样本依赖补全
+- 暂未接入天气、节假日、大型活动等外部因素
+- `road_count` 已存储，但暂未作为模型主输入特征
+- 普通地图 API 无法直接提供车辆计数，因此系统以速度作为代理变量
+- 模拟数据适合演示和工程验证，但不等价于长期真实交通数据
+
+后续优化：
+
+- 延长真实采集周期，提高训练数据真实性
+- 将天气、节假日、工作日/周末作为外生变量加入模型
+- 将事件数据与预测模型联动
+- 增加模型自动重训与权重自动发布机制
+- 配置 HTTPS 和正式域名
+- 将前端部分说明文字整理为更正式的系统帮助页或论文附录
+
+---
+
+## 19. 演示建议口径
+
+答辩时可以按下面顺序讲：
+
+1. 系统监测 11 个核心路口节点。
+2. 数据来源包括高德真实路况数据和模拟采集数据。
+3. 由于真实接口额度有限，系统通过模拟采集保证云端持续运行。
+4. 训练阶段对真实采集数据进行冻结、对齐和补全，保证模型训练可复现。
+5. 模型采用 LST-GCN，同时考虑节点空间关系和时间序列变化。
+6. 系统预测未来 15、30、45、60 分钟速度，并将结果用于 Dashboard 和 Route。
+7. 事件模块模拟交通管理业务流程，包括上报、受理、解决、忽略和权限控制。
+8. 系统已经部署到云服务器，本地电脑关闭后仍可访问和持续采集。
+
+简短版本：
+
+> 本系统以路口速度数据为核心，结合 LST-GCN 模型实现短时交通状态预测，并通过 Web 前端完成地图展示、趋势监测、路线建议和事件调度，形成了一个可部署、可演示、可解释的智能交通监测与预测平台。
+
