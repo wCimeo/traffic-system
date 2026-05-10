@@ -92,6 +92,8 @@
   - 包含 `node_id`、`predicted_speed`、`predicted_at`、`horizon_minutes`、`target_at`、`source_table`
 - `incidents`
   - 事件上报与处理表
+  - `type` 使用中文事件类型，如 `交通事故`、`道路施工`、`异常拥堵`、`信号灯故障`、`车辆故障`
+  - `description` 使用正常中文描述，后端会自动修复历史模拟数据中的乱码描述
 - `users`
   - 用户登录、会话、角色与安全信息表
 
@@ -441,6 +443,37 @@ EMAIL_TEST_RECIPIENT=3379556417@qq.com
 
 系统会自动修复历史数据中不规范的 `role_id`。
 
+### 8.5 事件表设计
+
+`incidents` 表由后端自动迁移创建，核心字段包括：
+
+- `id`
+- `node_id`
+- `type`
+- `description`
+- `severity`
+- `status`
+- `reporter_id`
+- `handler_id`
+- `handled_at`
+- `created_at`
+- `updated_at`
+
+事件状态：
+
+- `reported`：待受理
+- `active`：处理中
+- `resolved`：已解决
+- `ignored`：已忽略
+
+数据规范：
+
+- `type` 存储中文描述，不再使用 `accident`、`road_work` 等英文枚举展示给前端
+- 历史英文类型会自动修复为中文
+- 历史 `description` 中的 `妯℃嫙浜嬩欢` 等乱码会自动修复为 `模拟事件`
+- `active`、`resolved`、`ignored` 状态的事件必须有 `handler_id`
+- `reported` 状态的 `handler_id` 可以为空，也可以预先指定处理人
+
 ---
 
 ## 9. 为什么用“速度”代替“车辆数量”描述交通状况
@@ -570,7 +603,7 @@ EMAIL_TEST_RECIPIENT=3379556417@qq.com
 功能：
 
 - 查看事件列表
-- 根据状态筛选事件
+- 根据状态筛选事件，顶部状态卡包括 `全部事件`、`待受理`、`处理中`、`已解决`、`已忽略`
 - 上报新事件
 - 管理员分配/修改处理身份
 - 点击节点 ID 跳转地图页聚焦对应路口
@@ -578,9 +611,36 @@ EMAIL_TEST_RECIPIENT=3379556417@qq.com
 核心流程：
 
 1. 调用 `/api/incidents`
-2. 如需用户下拉列表，则调用 `/api/auth/users`
-3. 新增事件时 POST `/api/incidents`
-4. 更新状态时 PUT `/api/incidents/:id`
+2. 页面会调用 `/api/auth/me` 同步当前登录账号与 `role_id`
+3. 如需用户下拉列表，则调用 `/api/auth/users`
+4. 新增事件时 POST `/api/incidents`
+5. 更新状态时 PUT `/api/incidents/:id`
+6. 删除事件时 DELETE `/api/incidents/:id`
+
+事件操作规则：
+
+- 待受理：
+  - 如果 `handler_id` 为空，所有拥有合法 `role_id` 的用户都可以点击 `受理`
+  - 如果 `handler_id` 指向其他用户，当前用户的 `受理` 按钮灰色不可点
+  - 如果 `handler_id` 等于当前登录用户 `role_id`，当前用户可以点击 `受理`
+- 处理中：
+  - 事件已经被受理，`handler_id` 必须非空
+  - 只有 `handler_id` 对应用户可以点击 `解决` 和 `忽略`
+  - 其他用户看到灰色不可点击按钮
+- 已解决：
+  - 操作按钮显示为 `重做`
+  - 只有原处理人可以点击 `重做`，重做后事件回到 `处理中`
+- 已忽略：
+  - 作为独立筛选状态展示
+- 删除：
+  - 只有管理员可以删除事件
+  - 执行者点击删除时，页面弹出权限提示
+
+三类入口约束：
+
+- 生成模拟事件：`active`、`resolved`、`ignored` 状态都会生成处理人 ID；`reported` 状态可以为空或指定处理人
+- 上报事件：上报人默认使用当前登录账号 `role_id`，处理人 ID 可选
+- 列表呈现：按钮可用性由当前登录账号 `role_id`、事件 `status` 和 `handler_id` 共同决定
 
 ### 10.5 Route 页面
 
@@ -682,9 +742,29 @@ EMAIL_TEST_RECIPIENT=3379556417@qq.com
 ### 11.6 事件接口
 
 - `GET /api/incidents`
+  - 返回最近 50 条事件
+  - 返回前会兜底规范化历史英文 `type` 与乱码 `description`
 - `POST /api/incidents`
+  - 需要登录
+  - 新建事件默认状态为 `reported`
+  - `reporter_id` 必须存在于 `users.role_id`
+  - `handler_id` 可为空；如果填写，必须存在于 `users.role_id`
 - `PUT /api/incidents/:id`
+  - 需要登录
+  - `reported -> active` 表示受理
+  - `active -> resolved` 表示解决
+  - `active -> ignored` 表示忽略
+  - `resolved -> active` 表示重做
+  - 受理空处理人事件时，后端会把当前用户 `role_id` 写入 `handler_id`
+  - 有指定处理人的事件只能由指定用户受理
+  - 处理中事件只能由处理人解决或忽略
 - `DELETE /api/incidents/:id`
+  - 需要登录
+  - 仅管理员可删除
+- `POST /api/incidents/mock-seed`
+  - 生成演示用模拟事件
+  - 写入中文 `type` 与正常中文 `description`
+  - 非待受理状态会保证 `handler_id` 非空
 
 ### 11.7 认证接口
 
