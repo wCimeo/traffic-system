@@ -474,7 +474,7 @@ export default function Incidents() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-[1180px] w-full table-fixed text-left border-collapse">
+          <table className="min-w-[1024px] w-full table-fixed text-left border-collapse">
             <colgroup>
               <col className="w-[90px]" />
               <col className="w-[130px]" />
