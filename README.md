@@ -169,11 +169,14 @@ AI 推理入口是 [ai_service/app.py](D:\Projects\VS_Code\traffic-system\ai_ser
 - Python 采集器
 - APScheduler
 - Nginx
-- Gunicorn
-- PM2
 - systemd
 
-部署样例见 [DEPLOYMENT.md](D:\Projects\VS_Code\traffic-system\deploy\DEPLOYMENT.md)。
+当前云端部署采用 Ubuntu 22.04 + Nginx + systemd：
+
+- `traffic-backend.service`：Node.js 后端
+- `traffic-ai.service`：Python AI 推理服务
+- `traffic-collector.service`：Python 采集器
+- Nginx：前端静态资源与 `/api` 反向代理
 
 ---
 
@@ -833,18 +836,113 @@ python model\train_real.py
 
 ### 12.2 生产部署建议
 
-当前仓库推荐的 Linux 生产结构是：
+当前云端生产结构是：
 
-- Nginx：静态前端 + `/api` 反向代理
-- PM2：Node 后端
-- Gunicorn + systemd：AI 服务
-- systemd：采集器
-- MySQL：业务数据
+- Ubuntu 22.04 LTS 云服务器
+- Nginx：静态前端 + `/api` 反向代理到 `127.0.0.1:3001`
+- systemd：托管 Node 后端、AI 服务和采集器
+- MySQL：业务数据与交通数据
 - Redis：验证码、限流、缓存
 
-部署文档见 [deploy/DEPLOYMENT.md](D:\Projects\VS_Code\traffic-system\deploy\DEPLOYMENT.md)。
+云端服务名称：
 
-如果你的电脑不能一直开着，确实应该把采集器与后端迁到云服务器长期运行。当前仓库已经有 `nginx + gunicorn + systemd/pm2` 的部署模板，可以直接作为云端版本基础。
+```bash
+traffic-backend.service
+traffic-ai.service
+traffic-collector.service
+```
+
+常用维护命令：
+
+```bash
+systemctl status traffic-backend traffic-ai traffic-collector --no-pager
+journalctl -u traffic-backend -f
+journalctl -u traffic-ai -f
+journalctl -u traffic-collector -f
+systemctl restart traffic-backend traffic-ai traffic-collector
+```
+
+Nginx 对外暴露：
+
+```text
+http://服务器公网 IP/
+http://服务器公网 IP/api/health
+```
+
+安全组建议只长期开放：
+
+```text
+22/tcp  SSH
+80/tcp  HTTP
+```
+
+`3001` 和 `5001` 只在服务器本机监听使用，不建议直接公网开放。
+
+如果本地电脑关机，云端仍会继续运行：
+
+- 采集器持续写入 `traffic_flow_mock`
+- 后端定时任务每 5 分钟触发预测
+- 前端通过 Nginx 访问云端后端 API
+
+### 12.3 云端代码更新流程
+
+本地代码修改后，推荐流程：
+
+1. 本地提交并推送到 GitHub
+
+```powershell
+git add .
+git commit -m "update feature"
+git push
+```
+
+2. 云服务器拉取并重新构建
+
+```bash
+cd /opt/traffic-system
+git pull
+
+cd backend
+npm install
+npm run build
+
+cd ../frontend
+npm install
+npm run build
+```
+
+3. 重启受影响的服务
+
+```bash
+systemctl restart traffic-backend
+systemctl restart traffic-ai
+systemctl restart traffic-collector
+systemctl reload nginx
+```
+
+说明：
+
+- 只改前端：重新 `frontend npm run build` 后 `systemctl reload nginx`
+- 只改后端：重新 `backend npm run build` 后 `systemctl restart traffic-backend`
+- 只改采集器：`systemctl restart traffic-collector`
+- 只改 AI 服务：`systemctl restart traffic-ai`
+- `.env` 不提交到 GitHub，云端保留自己的 `/opt/traffic-system/.env`
+
+### 12.4 数据库迁移与备份
+
+本地 MySQL 迁移到云端时使用 `mysqldump` 导出：
+
+```powershell
+mysqldump --host=localhost --user=root --default-character-set=utf8mb4 --single-transaction --routines --triggers --result-file=deploy_backup\traffic_YYYYMMDD.sql traffic
+```
+
+上传到云服务器后导入：
+
+```bash
+mysql -utraffic_user -p traffic < /home/ubuntu/traffic_YYYYMMDD.sql
+```
+
+导入成功后，服务器上的 `.sql` 文件不再是运行依赖，可以删除或离线归档。该文件可能包含用户、会话、事件和交通数据，不能提交到仓库，也不建议长期放在公网服务器用户目录中。
 
 ---
 
