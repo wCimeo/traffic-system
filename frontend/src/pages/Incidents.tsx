@@ -518,12 +518,12 @@ export default function Incidents() {
                         </button>
                       </td>
                       <td className="px-6 py-4 text-sm font-semibold text-slate-700">{item.type}</td>
-                      <td className="px-6 py-4">
+                      <td className="overflow-hidden px-6 py-4">
                         <button
                           type="button"
                           onClick={() => setDetailIncident(item)}
                           title={item.description}
-                          className="block max-w-xs truncate rounded text-left text-sm text-slate-600 transition-colors hover:text-brand-600 hover:underline focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                          className="block w-full min-w-0 max-w-full truncate rounded text-left text-sm text-slate-600 transition-colors hover:text-brand-600 hover:underline focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                         >
                           {item.description}
                         </button>
