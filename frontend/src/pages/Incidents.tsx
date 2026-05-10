@@ -137,6 +137,7 @@ export default function Incidents() {
   const [usersLoading, setUsersLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showRoleModal, setShowRoleModal] = useState(false);
+  const [detailIncident, setDetailIncident] = useState<Incident | null>(null);
   const [filter, setFilter] = useState<'all' | IncidentStatus>('all');
   const [keyword, setKeyword] = useState('');
   const [pageSize, setPageSize] = useState(10);
@@ -517,7 +518,16 @@ export default function Incidents() {
                         </button>
                       </td>
                       <td className="px-6 py-4 text-sm font-semibold text-slate-700">{item.type}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600 max-w-xs truncate">{item.description}</td>
+                      <td className="px-6 py-4">
+                        <button
+                          type="button"
+                          onClick={() => setDetailIncident(item)}
+                          title={item.description}
+                          className="block max-w-xs truncate rounded text-left text-sm text-slate-600 transition-colors hover:text-brand-600 hover:underline focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                        >
+                          {item.description}
+                        </button>
+                      </td>
                       <td className="px-6 py-4">
                         <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold" style={{ color: sev.color, background: sev.bg }}>
                           {sev.label}
@@ -851,6 +861,84 @@ export default function Incidents() {
                       <button onClick={updateUserRole} disabled={roleSubmitting || usersLoading || !roleForm.userId} className="btn-primary flex-1 !h-11">
                         {roleSubmitting ? '更新中...' : '确认更新'}
                       </button>
+                    </div>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
+        )}
+
+      {typeof document !== 'undefined' &&
+        createPortal(
+          <AnimatePresence>
+            {detailIncident && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setDetailIncident(null)}
+                className="fixed inset-0 z-[132] flex items-center justify-center bg-slate-950/60 p-6 backdrop-blur-sm"
+              >
+                <motion.div
+                  initial={{ scale: 0.95, y: 20, opacity: 0 }}
+                  animate={{ scale: 1, y: 0, opacity: 1 }}
+                  exit={{ scale: 0.95, y: 20, opacity: 0 }}
+                  onClick={(event) => event.stopPropagation()}
+                  className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-2xl"
+                >
+                  <div className="flex items-center justify-between border-b border-slate-100 p-6">
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900">事件详细描述</h3>
+                      <p className="mt-1 text-xs font-bold text-slate-400">
+                        {detailIncident.node_id} · {detailIncident.type}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setDetailIncident(null)}
+                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-400 hover:text-red-500"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-5 p-6">
+                    <div className="flex flex-wrap gap-2">
+                      <span
+                        className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold"
+                        style={{
+                          color: (SEVERITY_MAP[detailIncident.severity] || SEVERITY_MAP[1]).color,
+                          background: (SEVERITY_MAP[detailIncident.severity] || SEVERITY_MAP[1]).bg,
+                        }}
+                      >
+                        {(SEVERITY_MAP[detailIncident.severity] || SEVERITY_MAP[1]).label}
+                      </span>
+                      <span
+                        className="inline-flex items-center rounded-full bg-slate-50 px-2.5 py-1 text-xs font-bold"
+                        style={{ color: (STATUS_MAP[detailIncident.status] || STATUS_MAP.reported).color }}
+                      >
+                        {(STATUS_MAP[detailIncident.status] || STATUS_MAP.reported).label}
+                      </span>
+                      <span className="inline-flex items-center rounded-full bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-500">
+                        {new Date(detailIncident.created_at).toLocaleString('zh-CN')}
+                      </span>
+                    </div>
+
+                    <div className="rounded-2xl bg-slate-50 p-5 text-sm font-medium leading-7 text-slate-700">
+                      {detailIncident.description}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 text-xs font-bold text-slate-500 sm:grid-cols-2">
+                      <div className="rounded-xl border border-slate-100 p-3">
+                        <div className="text-slate-400">上报人ID</div>
+                        <div className="mt-1 text-slate-700">{detailIncident.reporter_id || '-'}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-100 p-3">
+                        <div className="text-slate-400">处理人ID</div>
+                        <div className="mt-1 text-slate-700">{detailIncident.handler_id || '-'}</div>
+                      </div>
                     </div>
                   </div>
                 </motion.div>
