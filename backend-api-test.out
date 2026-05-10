@@ -1,4 +1,0 @@
-◇ injected env (28) from ..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
-◇ injected env (0) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
-Redis connected
-Backend server running at http://localhost:3101

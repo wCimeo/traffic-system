@@ -100,14 +100,38 @@ function getRoleId(user?: Pick<CurrentUser, 'roleId' | 'role_id'> | Pick<UserOpt
   return String(user?.roleId || user?.role_id || '').trim();
 }
 
+function isAdminUser(user: CurrentUser) {
+  const role = String(user.role || '').trim();
+  const roleId = getRoleId(user);
+  return role === '管理员' || roleId.startsWith('G');
+}
+
+function parseUserOptions(payload: any): UserOption[] {
+  const rawUsers = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.users)
+    ? payload.users
+    : Array.isArray(payload?.data)
+    ? payload.data
+    : [];
+
+  return (rawUsers as UserOption[])
+    .filter((user) => user && user.id !== undefined && user.id !== null)
+    .map((user) => ({
+      ...user,
+      role_id: getRoleId(user),
+    }));
+}
+
 export default function Incidents() {
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState<CurrentUser>(() => readStoredUser());
   const currentRoleId = getRoleId(currentUser);
-  const isAdmin = currentUser.role === '管理员';
+  const isAdmin = isAdminUser(currentUser);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [filter, setFilter] = useState<'all' | IncidentStatus>('all');
@@ -141,16 +165,28 @@ export default function Incidents() {
   };
 
   const loadUsers = async (fallbackRoleId = currentRoleId) => {
-    const res = await api.get('/api/auth/users');
-    const list = ((res.data.users || []) as UserOption[]).map((user) => ({
-      ...user,
-      role_id: getRoleId(user),
-    }));
-    setUsers(list);
-    setForm((curr) => ({
-      ...curr,
-      reporter_id: curr.reporter_id || fallbackRoleId || list[0]?.role_id || '',
-    }));
+    setUsersLoading(true);
+    try {
+      const res = await api.get('/api/auth/users');
+      const list = parseUserOptions(res.data);
+      const firstUser = list[0];
+      setUsers(list);
+      setForm((curr) => ({
+        ...curr,
+        reporter_id: curr.reporter_id || fallbackRoleId || firstUser?.role_id || '',
+      }));
+      setRoleForm((curr) => {
+        const selected = list.find((user) => String(user.id) === curr.userId) || firstUser;
+        return {
+          ...curr,
+          userId: selected ? String(selected.id) : '',
+          role: selected?.role === '管理员' ? '管理员' : '执行者',
+        };
+      });
+      return list;
+    } finally {
+      setUsersLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -268,6 +304,30 @@ export default function Incidents() {
     }
   };
 
+  const openRoleModal = async () => {
+    if (!isAdmin) {
+      showToast('仅管理员可修改员工身份', 'error');
+      return;
+    }
+
+    setShowRoleModal(true);
+    let fallbackRoleId = currentRoleId;
+    try {
+      const freshUser = await loadCurrentUser();
+      fallbackRoleId = getRoleId(freshUser) || fallbackRoleId;
+    } catch (e) {
+      console.error(e);
+    }
+
+    try {
+      await loadUsers(fallbackRoleId);
+    } catch (err: any) {
+      console.error(err);
+      setUsers([]);
+      showToast(err?.response?.data?.error || '用户列表读取失败，请检查登录状态或后端服务', 'error');
+    }
+  };
+
   const updateUserRole = async () => {
     if (!roleForm.userId) {
       showToast('请选择需要修改身份的用户', 'error');
@@ -345,10 +405,13 @@ export default function Incidents() {
         })}
       </div>
 
-      <div className="flex flex-col md:flex-row md:items-center justify-end gap-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="text-xs font-bold text-slate-400">
+          当前身份：{currentUser.role || (isAdmin ? '管理员' : '执行者')} {currentRoleId ? `· ${currentRoleId}` : ''}
+        </div>
         <div className="flex items-center gap-3">
           {isAdmin && (
-            <button onClick={() => setShowRoleModal(true)} className="btn-ghost gap-2">
+            <button onClick={openRoleModal} className="btn-ghost gap-2">
               <ShieldCheck className="h-4 w-4" />
               <span>更新员工身份信息</span>
             </button>
@@ -674,9 +737,10 @@ export default function Incidents() {
                       <select
                         className="input-base px-4"
                         value={roleForm.userId}
+                        disabled={usersLoading || users.length === 0}
                         onChange={(e) => handleRoleUserChange(e.target.value)}
                       >
-                        <option value="">请选择</option>
+                        <option value="">{usersLoading ? '加载中...' : users.length === 0 ? '暂无用户' : '请选择'}</option>
                         {users.map((u) => (
                           <option key={u.id} value={String(u.id)}>
                             {(u.username || `用户${u.id}`)}-{u.role_id}（{u.role || '执行者'}）
@@ -697,7 +761,7 @@ export default function Incidents() {
                     </div>
                     <div className="pt-2 flex gap-3">
                       <button onClick={() => setShowRoleModal(false)} className="btn-ghost flex-1 !h-11">取消</button>
-                      <button onClick={updateUserRole} disabled={roleSubmitting} className="btn-primary flex-1 !h-11">
+                      <button onClick={updateUserRole} disabled={roleSubmitting || usersLoading || !roleForm.userId} className="btn-primary flex-1 !h-11">
                         {roleSubmitting ? '更新中...' : '确认更新'}
                       </button>
                     </div>

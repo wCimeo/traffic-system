@@ -1,6 +1,0 @@
-◇ injected env (28) from ..\.env // tip: ⌘ suppress logs { quiet: true }
-◇ injected env (0) from .env // tip: ⌘ override existing { override: true }
-Redis connected
-Backend server running at http://localhost:3102
-[DEV CAPTCHA] id=5ec19d5a-802e-4523-a33a-5bc84f8453d6 code=EqHDE ttl=300s ip=127.0.0.1
-[DEV EMAIL] email=3379556417+test@qq.com deliveredTo=3379556417@qq.com code=612936 ttl=600s ip=127.0.0.1
