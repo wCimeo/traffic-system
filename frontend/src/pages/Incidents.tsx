@@ -10,6 +10,7 @@ import {
   Clock,
   Filter,
   X,
+  ChevronLeft,
   ChevronRight,
   Trash2,
   Sparkles,
@@ -88,6 +89,8 @@ const FILTER_ITEMS: Array<{ key: 'all' | IncidentStatus; label: string; icon: an
   { key: 'ignored', label: '已忽略', icon: X },
 ];
 
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+
 function readStoredUser(): CurrentUser {
   try {
     return JSON.parse(localStorage.getItem('user') || '{}');
@@ -136,6 +139,8 @@ export default function Incidents() {
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [filter, setFilter] = useState<'all' | IncidentStatus>('all');
   const [keyword, setKeyword] = useState('');
+  const [pageSize, setPageSize] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [roleSubmitting, setRoleSubmitting] = useState(false);
   const [seeding, setSeeding] = useState(false);
@@ -233,6 +238,33 @@ export default function Incidents() {
       );
     });
   }, [incidents, filter, keyword]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, keyword, pageSize]);
+
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(filtered.length / pageSize)), [filtered.length, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(Math.max(page, 1), totalPages));
+  }, [totalPages]);
+
+  const paginated = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, currentPage, pageSize]);
+
+  const pageNumbers = useMemo(() => {
+    const maxButtons = 5;
+    const half = Math.floor(maxButtons / 2);
+    let start = Math.max(1, currentPage - half);
+    const end = Math.min(totalPages, start + maxButtons - 1);
+    start = Math.max(1, end - maxButtons + 1);
+    return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+  }, [currentPage, totalPages]);
+
+  const pageStart = filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const pageEnd = Math.min(currentPage * pageSize, filtered.length);
 
   const handleSubmit = async () => {
     if (!form.description.trim()) return;
@@ -465,7 +497,7 @@ export default function Incidents() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               <AnimatePresence mode="popLayout">
-                {filtered.map((item) => {
+                {paginated.map((item) => {
                   const sev = SEVERITY_MAP[item.severity] || SEVERITY_MAP[1];
                   const sta = STATUS_MAP[item.status] || STATUS_MAP.reported;
                   const StatusIcon = sta.icon;
@@ -585,6 +617,61 @@ export default function Incidents() {
               <p className="text-slate-400 text-sm">暂无匹配的事件记录</p>
             </div>
           )}
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-slate-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-xs font-bold text-slate-400">
+            显示 {pageStart}-{pageEnd} 条，共 {filtered.length} 条
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <label className="text-xs font-bold text-slate-500" htmlFor="incident-page-size">
+              每页
+            </label>
+            <select
+              id="incident-page-size"
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-brand-500/20"
+            >
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size} 条
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              disabled={currentPage <= 1}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 disabled:cursor-not-allowed disabled:text-slate-300"
+              title="上一页"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            {pageNumbers.map((page) => (
+              <button
+                key={page}
+                type="button"
+                onClick={() => setCurrentPage(page)}
+                className={`h-9 min-w-9 rounded-lg border px-3 text-xs font-black ${
+                  currentPage === page
+                    ? 'border-slate-900 bg-slate-900 text-white'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+              disabled={currentPage >= totalPages}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 disabled:cursor-not-allowed disabled:text-slate-300"
+              title="下一页"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
 
