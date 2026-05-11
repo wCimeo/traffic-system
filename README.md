@@ -451,6 +451,7 @@ frontend/src/pages/Dashboard.tsx
 - 同图展示实际速度与 15 分钟预测速度
 - 标注早高峰、午高峰、晚高峰背景
 - 支持图表缩放和日期选择
+- 图表标题会同时显示日期、节点编号和路口中文名称，便于截图、汇报和数据核对
 
 最近已经对 Dashboard 数据进行了回填，使当天 00:00 起有较合理的交通速度曲线，避免图表出现异常断裂或视觉错乱。
 
@@ -487,9 +488,11 @@ frontend/src/pages/Incidents.tsx
 - 用户可选择每页显示 `10/20/50/100` 条
 - 页码位于列表右下角
 - 上报事件
-- 生成模拟事件
+- 生成事件记录
 - 点击节点 ID 跳转地图页
 - 管理员更新员工身份信息
+- 描述列默认单行截断，点击描述文本可打开完整详情弹窗
+- 描述详情弹窗展示完整描述、节点、事件类型、风险、状态、上报时间、上报人 ID 和处理人 ID
 
 事件状态：
 
@@ -519,7 +522,8 @@ frontend/src/pages/Incidents.tsx
 
 - `type` 使用中文事件类型，例如 `交通事故`、`道路施工`、`异常拥堵`、`信号灯故障`、`车辆故障`
 - `description` 使用正常中文描述
-- 后端会自动修复历史模拟数据中的乱码描述
+- 生成的事件记录使用现场上报口吻描述，不再在描述中出现“模拟事件”等标记
+- 后端会自动修复历史数据中的乱码描述，并清理旧记录中类似“模拟事件 #...”的尾部标记
 
 ### 8.5 Route 路线建议页
 
@@ -566,6 +570,8 @@ frontend/src/pages/Settings.tsx
 - 邮箱验证码
 - 历史数据导出
 - 预测报表导出
+- 预测导出支持选择 `15/30/45/60` 分钟窗口，默认全选，至少保留一个窗口
+- 预测导出的 CSV 按“路口 + 预测窗口”生成明细行，包含目标时间、预测速度、速度变化、评分、通行建议和原因说明
 - 系统说明展示
 
 ---
@@ -667,6 +673,19 @@ Route：
 
 - `GET /api/report/export`
 - `GET /api/report/predict-export`
+
+预测报表导出参数：
+
+- `node_id`：可选，传入具体节点编号时只导出该路口，传入 `all` 或不传则导出全部节点
+- `horizons`：可选，逗号分隔的预测窗口，例如 `15,30,45,60`
+
+预测报表 CSV 字段：
+
+```text
+node_id,node_name,generated_at,current_speed_kmh,current_status,current_collected_at,
+horizon_minutes,target_at,predicted_speed_kmh,predicted_status,speed_delta_kmh,
+score,recommendation,level,reason,model_bucket_minutes
+```
 
 ---
 
@@ -950,7 +969,10 @@ mysql -utraffic_user -p traffic < /home/ubuntu/traffic_YYYYMMDD.sql
 - Route 路线建议
 - Incidents 事件完整流程
 - 事件列表搜索、状态筛选和分页
+- 事件描述详情弹窗
+- 真实化事件记录生成
 - 报表导出
+- 多时域预测明细导出
 - 云服务器部署
 - 电脑关闭后云端采集器持续运行
 
@@ -1001,4 +1023,3 @@ mysql -utraffic_user -p traffic < /home/ubuntu/traffic_YYYYMMDD.sql
 简短版本：
 
 > 本系统以路口速度数据为核心，结合 LST-GCN 模型实现短时交通状态预测，并通过 Web 前端完成地图展示、趋势监测、路线建议和事件调度，形成了一个可部署、可演示、可解释的智能交通监测与预测平台。
-
