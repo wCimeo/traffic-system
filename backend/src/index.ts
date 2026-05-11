@@ -1021,7 +1021,6 @@ app.get('/api/report/predict-export', async (req, res) => {
     const header = csvRow([
       'node_id',
       'node_name',
-      'source_table',
       'generated_at',
       'current_speed_kmh',
       'current_status',
@@ -1056,7 +1055,6 @@ app.get('/api/report/predict-export', async (req, res) => {
         return csvRow([
           nid,
           nodeName,
-          TRAFFIC_SOURCE.readTable,
           predictionResult.generatedAt.toISOString(),
           currentSpeed ?? '',
           currentStatus,
