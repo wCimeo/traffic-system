@@ -449,10 +449,10 @@ export default function Incidents() {
               <span>更新员工身份信息</span>
             </button>
           )}
-          <button onClick={seedMockData} disabled={seeding} className="btn-ghost gap-2">
+          {/* <button onClick={seedMockData} disabled={seeding} className="btn-ghost gap-2">
             <Sparkles className="h-4 w-4" />
             <span>{seeding ? '生成中...' : '生成事件记录'}</span>
-          </button>
+          </button> */}
           <button onClick={() => setShowForm(true)} className="btn-primary gap-2 shadow-lg shadow-slate-900/10">
             <Plus className="h-4 w-4" />
             <span>上报事件</span>
