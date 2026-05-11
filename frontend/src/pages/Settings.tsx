@@ -49,6 +49,7 @@ const SETTINGS_SECTION_KEY = 'traffic_settings_active_section';
 const SETTINGS_THEME_KEY = 'traffic_theme_mode';
 const EXPORT_HISTORY_KEY = 'traffic_export_history';
 const NODE_OPTIONS = ['all', 'A1', 'B2', 'C3', 'D4', 'E5', 'F6', 'G7', 'H8', 'I9', 'J10', 'K11'];
+const PREDICTION_HORIZONS = [15, 30, 45, 60];
 
 function getStoredSection(): SettingsSection {
   const stored = localStorage.getItem(SETTINGS_SECTION_KEY);
@@ -123,6 +124,7 @@ export default function Settings() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [nodeId, setNodeId] = useState('all');
+  const [predictionHorizons, setPredictionHorizons] = useState<number[]>(PREDICTION_HORIZONS);
   const [exportHistory, setExportHistory] = useState<ExportRecord[]>(getStoredExportHistory);
 
   const [profileForm, setProfileForm] = useState({
@@ -379,17 +381,28 @@ export default function Settings() {
   const handlePredictExport = () => {
     const params = new URLSearchParams();
     if (nodeId) params.append('node_id', nodeId);
+    params.append('horizons', predictionHorizons.join(','));
     const token = localStorage.getItem('token');
     const scope = nodeId === 'all' ? '全部路口' : `路口 ${nodeId}`;
+    const horizonText = predictionHorizons.map((item) => `${item} 分钟`).join(' / ');
 
     setExportHistory((curr) => [
-      { id: `${Date.now()}`, type: '预测数据导出', time: new Date().toLocaleString('zh-CN'), scope, range: '当前数据窗口 + 15/30/45/60 分钟预测' },
+      { id: `${Date.now()}`, type: '预测数据导出', time: new Date().toLocaleString('zh-CN'), scope, range: `当前数据窗口 + ${horizonText}预测` },
       ...curr,
     ].slice(0, 10));
 
     if (token) params.append('token', token);
     window.open(`/api/report/predict-export?${params.toString()}`);
     showToast('预测数据导出已开始', 'success');
+  };
+
+  const togglePredictionHorizon = (horizon: number) => {
+    setPredictionHorizons((curr) => {
+      if (curr.includes(horizon)) {
+        return curr.length === 1 ? curr : curr.filter((item) => item !== horizon);
+      }
+      return [...curr, horizon].sort((a, b) => a - b);
+    });
   };
 
   const navItems: Array<{ key: SettingsSection; label: string; icon: typeof User }> = [
@@ -727,7 +740,7 @@ export default function Settings() {
                   </div>
                   <div>
                     <h3 className="text-lg font-black text-slate-900">档案数据导出</h3>
-                    <p className="text-sm text-slate-500">导出历史路况数据或预测报表。</p>
+                    <p className="text-sm text-slate-500">导出历史数据或预测数据报表。</p>
                   </div>
                 </div>
 
@@ -748,6 +761,41 @@ export default function Settings() {
                         <option key={node} value={node}>{node}</option>
                       ))}
                     </select>
+                  </div>
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <div className="text-sm font-black text-slate-900">预测窗口</div>
+                      <div className="text-xs font-semibold text-slate-500">预测导出会按“路口 + 窗口”生成明细行，包含目标时间、速度变化、评分和通行建议。</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPredictionHorizons(PREDICTION_HORIZONS)}
+                      className="text-xs font-black text-brand-600 hover:text-brand-700"
+                    >
+                      全选
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {PREDICTION_HORIZONS.map((horizon) => {
+                      const active = predictionHorizons.includes(horizon);
+                      return (
+                        <button
+                          key={horizon}
+                          type="button"
+                          onClick={() => togglePredictionHorizon(horizon)}
+                          className={`h-11 rounded-xl border text-sm font-black transition-all ${
+                            active
+                              ? 'border-brand-200 bg-white text-brand-700 shadow-sm'
+                              : 'border-slate-200 bg-slate-100 text-slate-400'
+                          }`}
+                        >
+                          {horizon} 分钟
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -853,10 +901,7 @@ export default function Settings() {
                     {[
                       { title: '看未来速度', text: '评分首先看预测时段内的未来速度。预测速度越低，说明未来通行能力越弱，扣分越多。' },
                       { title: '看是否变慢', text: '系统还会比较预测速度和当前速度。如果未来明显比现在更慢，也会继续扣分。' },
-                      { title: '为什么高分扎堆', text: '旧规则更像整档扣分，所以分数容易集中在 90 或 100。现在已经改成连续扣分，分值会更自然。' },
                       { title: '等级判断', text: '未来速度很低，或者总分已经落到较低区间时，会判为 bad；中间状态判为 normal；速度稳定且整体较好时判为 good。' },
-                      { title: '页面文案', text: 'good 对应“建议通行”，normal 对应“谨慎通行”，bad 对应“建议绕行”。这是对 score 的业务化解释。' },
-                      { title: '实现口径', text: '正常情况下 score 由后端统一计算后返回前端展示，前端只负责渲染；只有接口字段缺失时才会启用兜底分数。' },
                     ].map((item) => (
                       <div key={item.title} className="rounded-[24px] border border-slate-100 bg-slate-50 p-5">
                         <div className="text-sm font-black text-slate-900">{item.title}</div>

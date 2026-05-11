@@ -318,6 +318,16 @@ function buildRouteAdvice(currentSpeed: number | null, predictedSpeed: number, h
   };
 }
 
+function csvCell(value: unknown) {
+  if (value === null || value === undefined) return '';
+  const text = String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function csvRow(values: unknown[]) {
+  return values.map(csvCell).join(',');
+}
+
 async function getLatestTrafficMap(nodeIds = NODE_IDS) {
   const [rows]: any = await pool.query(
     `SELECT t.node_id, t.speed, t.congestion_status, t.collected_at
@@ -980,27 +990,26 @@ app.get('/api/report/export', async (req, res) => {
   }
 });
 
-// 棰勬祴鎶ヨ〃瀵煎嚭锛堝惈15鍒嗛挓鍜?0鍒嗛挓棰勬祴锛?
+// 棰勬祴鎶ヨ〃瀵煎嚭
 app.get('/api/report/predict-export', async (req, res) => {
   const { node_id } = req.query;
+  const horizons = parseHorizonList(req.query.horizons, DEFAULT_HORIZONS);
   try {
     const predictionResult = await inferPredictionSnapshot();
-    const pred15 = predictionResult.snapshots.find((item) => item.horizon_minutes === 15)?.predictions || {};
-    const pred30 = predictionResult.snapshots.find((item) => item.horizon_minutes === 30)?.predictions || {};
-
-    // 3. 鍙栨渶鏂伴噰闆嗘暟鎹?
-    const [current]: any = await pool.query(
-      `SELECT t.node_id, t.speed, t.congestion_status, t.collected_at
-       FROM ${TRAFFIC_TABLE} t
-       INNER JOIN (
-         SELECT node_id, MAX(collected_at) as max_time
-         FROM ${TRAFFIC_TABLE} GROUP BY node_id
-       ) latest ON t.node_id = latest.node_id AND t.collected_at = latest.max_time
-       ORDER BY t.node_id`
-    );
+    const targetNodes = (node_id && node_id !== 'all')
+      ? [node_id as string]
+      : NODE_IDS;
+    const latestMap = await getLatestTrafficMap(targetNodes);
+    const selectedSnapshots = predictionResult.snapshots
+      .filter((item) => horizons.includes(item.horizon_minutes))
+      .sort((a, b) => a.horizon_minutes - b.horizon_minutes);
 
     const STATUS: Record<number, string> = {
-      0: 'unknown', 1: 'smooth', 2: 'slow', 3: 'congested', 4: 'severe'
+      0: 'unknown',
+      1: 'smooth',
+      2: 'slow',
+      3: 'congested',
+      4: 'severe',
     };
 
     const getStatus = (speed: number) => {
@@ -1009,41 +1018,65 @@ app.get('/api/report/predict-export', async (req, res) => {
       return 'congested';
     };
 
-    const now = predictionResult.generatedAt;
-
-    // 4. 杩囨护鑺傜偣
-    const targetNodes = (node_id && node_id !== 'all')
-      ? [node_id as string]
-      : NODE_IDS;
-
-    const currentMap: Record<string, any> = {};
-    for (const r of current) currentMap[r.node_id] = r;
-
-    // 5. 鐢熸垚CSV
-    const header = [
+    const header = csvRow([
       'node_id',
-      'current_speed_kmh', 'current_status', 'collected_at',
-      'predicted_speed_15min_kmh', 'predicted_status_15min',
-      'predicted_speed_30min_kmh', 'predicted_status_30min',
-    ].join(',') + '\n';
+      'node_name',
+      'source_table',
+      'generated_at',
+      'current_speed_kmh',
+      'current_status',
+      'current_collected_at',
+      'horizon_minutes',
+      'target_at',
+      'predicted_speed_kmh',
+      'predicted_status',
+      'speed_delta_kmh',
+      'score',
+      'recommendation',
+      'level',
+      'reason',
+      'model_bucket_minutes',
+    ]) + '\n';
 
-    const body = targetNodes.map(nid => {
-      const cur = currentMap[nid];
-      const curSpeed  = cur ? cur.speed : '--';
-      const curStatus = cur ? STATUS[cur.congestion_status] : '--';
-      const curTime   = cur ? new Date(cur.collected_at).toLocaleString('zh') : '--';
-      const p15Speed  = pred15[nid] ?? '--';
-      const p30Speed  = pred30[nid] ?? '--';
-      return [
-        nid,
-        curSpeed, curStatus, curTime,
-        p15Speed, typeof p15Speed === 'number' ? getStatus(p15Speed) : '--',
-        p30Speed, typeof p30Speed === 'number' ? getStatus(p30Speed) : '--',
-      ].join(',');
+    const body = targetNodes.flatMap((nid) => {
+      const cur = latestMap.get(nid);
+      const currentSpeed = cur ? Number(cur.speed) : null;
+      const currentStatus = cur ? STATUS[cur.congestion_status] || 'unknown' : '';
+      const currentTime = cur?.collected_at ? new Date(cur.collected_at).toISOString() : '';
+      const nodeName = INCIDENT_NODE_NAMES[nid] || NODES_META.find((node) => node.id === nid)?.name || nid;
+
+      return selectedSnapshots.map((snapshot) => {
+        const rawPredictedSpeed = snapshot.predictions?.[nid];
+        const predictedSpeed = Number(rawPredictedSpeed ?? 0);
+        const hasPrediction = rawPredictedSpeed !== undefined && rawPredictedSpeed !== null;
+        const advice = hasPrediction
+          ? buildRouteAdvice(currentSpeed, predictedSpeed, snapshot.horizon_minutes)
+          : { speed_delta: null, score: '', recommendation: '', level: '', reason: 'no prediction available' };
+
+        return csvRow([
+          nid,
+          nodeName,
+          TRAFFIC_SOURCE.readTable,
+          predictionResult.generatedAt.toISOString(),
+          currentSpeed ?? '',
+          currentStatus,
+          currentTime,
+          snapshot.horizon_minutes,
+          snapshot.target_at,
+          hasPrediction ? predictedSpeed.toFixed(2) : '',
+          hasPrediction ? getStatus(predictedSpeed) : '',
+          advice.speed_delta ?? '',
+          advice.score,
+          advice.recommendation,
+          advice.level,
+          advice.reason,
+          getModelBucketMinutes(),
+        ]);
+      });
     }).join('\n');
 
     const csv = '\uFEFF' + header + body;
-    const filename = `traffic_predict_${now.toISOString().slice(0,16).replace('T','_')}.csv`;
+    const filename = `traffic_predict_${predictionResult.generatedAt.toISOString().slice(0, 16).replace('T', '_')}_${horizons.join('-')}min.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
     res.send(csv);

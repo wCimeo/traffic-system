@@ -218,7 +218,7 @@ export default function RoutePage() {
             </div>
 
             <div>
-              <label className="text-xs font-bold text-slate-500">预测时段</label>
+              <label className="text-xs font-bold text-slate-500">预测窗口，可多选</label>
               <div className="mt-3 grid grid-cols-4 gap-2">
                 {HORIZONS.map((horizon) => {
                   const active = selectedHorizons.includes(horizon);
