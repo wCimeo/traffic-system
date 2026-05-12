@@ -604,7 +604,10 @@ app.get('/api/nodes', (req, res) => {
 // 浜嬩欢绠＄悊
 app.get('/api/incidents', async (req, res) => {
     try {
-        const [rows] = await db_1.default.query(`SELECT * FROM incidents ORDER BY created_at DESC LIMIT 50`);
+        const [rows] = await db_1.default.query(
+        // Return the full incident set so the frontend pagination, delete actions,
+        // and summary cards stay consistent once records exceed 50 rows.
+        `SELECT * FROM incidents ORDER BY created_at DESC`);
         res.json({ success: true, data: rows.map(normalizeIncidentRow) });
     }
     catch (err) {
