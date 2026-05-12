@@ -752,6 +752,7 @@ router.post('/users/:id/role', requireAuth, async (req: AuthRequest, res: Respon
 });
 
 router.post('/profile', requireAuth, async (req: AuthRequest, res: Response) => {
+  const username = String(req.body.username || '').trim();
   const requestedRole = String(req.body.role || '').trim();
   const role = req.user?.role === '管理员'
     ? String(requestedRole || req.user?.role || '').trim()
@@ -763,6 +764,9 @@ router.post('/profile', requireAuth, async (req: AuthRequest, res: Response) => 
 
   if (req.user?.role !== '管理员' && requestedRole && requestedRole !== req.user?.role) {
     return res.status(403).json({ success: false, error: '仅管理员可修改用户身份' });
+  }
+  if (!/^[A-Za-z0-9_]{4,32}$/.test(username)) {
+    return res.status(400).json({ success: false, error: '用户名需为 4-32 位字母、数字或下划线' });
   }
   if (!allowedRoles.includes(role)) {
     return res.status(400).json({ success: false, error: '角色仅支持：管理员、执行者' });
@@ -777,6 +781,14 @@ router.post('/profile', requireAuth, async (req: AuthRequest, res: Response) => 
     return res.status(400).json({ success: false, error: '性别字段不合法' });
   }
 
+  const [existingUsers]: any = await pool.query(
+    'SELECT id FROM users WHERE username = ? AND id <> ? LIMIT 1',
+    [username, req.user!.id]
+  );
+  if (existingUsers.length > 0) {
+    return res.status(409).json({ success: false, error: '用户名已被占用' });
+  }
+
   let updated = false;
   for (let i = 0; i < 5; i += 1) {
     let nextRoleId = req.user!.role_id;
@@ -785,8 +797,8 @@ router.post('/profile', requireAuth, async (req: AuthRequest, res: Response) => 
     }
     try {
       await pool.query(
-        'UPDATE users SET role = ?, role_id = ?, avatar_url = NULLIF(?, ""), gender = NULLIF(?, "") WHERE id = ?',
-        [role, nextRoleId, avatarUrl, gender, req.user!.id]
+        'UPDATE users SET username = ?, role = ?, role_id = ?, avatar_url = NULLIF(?, ""), gender = NULLIF(?, "") WHERE id = ?',
+        [username, role, nextRoleId, avatarUrl, gender, req.user!.id]
       );
       updated = true;
       break;
