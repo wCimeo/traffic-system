@@ -851,7 +851,7 @@ export default function Settings() {
                       { title: '监测总览面板', text: '汇总采集数据、平均速度、拥堵节点数量与预测服务状态。' },
                       { title: '实时路网地图', text: '展示核心路口速度与拥堵状态，支持列表与地图联动。' },
                       { title: '突发事件监控', text: '实时监控并预警交通突发事件。' },
-                      { title: '智能路线推荐', text: '基于路况数据，为出行决策提供推荐参考。' },
+                      { title: '智能路径推荐', text: '基于路况数据，为出行决策提供推荐参考。' },
                     ].map((item) => (
                       <div key={item.title} className="rounded-[24px] border border-slate-100 bg-slate-50 p-5">
                         <div className="text-sm font-black text-slate-900">{item.title}</div>
@@ -892,8 +892,8 @@ export default function Settings() {
                       <Navigation className="h-5 w-5" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-black text-slate-900">路线评分规则</h3>
-                      <p className="text-sm text-slate-500">说明智能路线推荐页面中的 score 是如何根据预测速度和速度变化计算的。</p>
+                      <h3 className="text-lg font-black text-slate-900">路径评分规则</h3>
+                      <p className="text-sm text-slate-500">说明智能路径推荐页面中的 score 是如何根据预测速度和速度变化计算的。</p>
                     </div>
                   </div>
 

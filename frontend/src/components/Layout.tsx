@@ -18,14 +18,14 @@ const navItems = [
   { path: '/dashboard', label: '监测总览面板', icon: LayoutDashboard },
   { path: '/map', label: '实时路网地图', icon: MapIcon },
   { path: '/incidents', label: '突发事件监控', icon: AlertTriangle },
-  { path: '/route', label: '智能路线推荐', icon: Navigation },
+  { path: '/route', label: '智能路径推荐', icon: Navigation },
   { path: '/settings', label: '设置', icon: SettingsIcon },
 ];
 const pageTitles: Record<string, string> = {
   '/dashboard': '监测总览面板',
   '/map': '实时路网地图',
   '/incidents': '突发事件监控',
-  '/route': '智能路线推荐',
+  '/route': '智能路径推荐',
   '/settings': '设置',
 };
 const defaultUser = { displayName: '管理员', username: 'admin_traffic' };

@@ -169,9 +169,9 @@ export default function RoutePage() {
       const responses = await Promise.all(selectedNodes.map((nodeId) => fetchRouteOutlook(nodeId, selectedHorizons)));
       const list = responses.flatMap((res) => (res.data?.data || []).map(normalizeOutlookItem));
       setItems(list);
-      if (!silent) showToast('路线预测建议已刷新', 'success');
+      if (!silent) showToast('路径预测建议已刷新', 'success');
     } catch (err: any) {
-      const message = err?.response?.data?.error || '获取路线建议失败，请稍后重试';
+      const message = err?.response?.data?.error || '获取路径建议失败，请稍后重试';
       setError(message);
       if (!silent) showToast(message, 'error');
     } finally {

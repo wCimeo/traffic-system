@@ -1,6 +1,6 @@
 # 智能交通流量监测与预测系统
 
-本项目是一个面向本科毕业设计场景的城市路口级智能交通监测与预测系统。系统围绕 11 个固定交通节点构建，集成了交通数据采集、数据存储、短时速度预测、可视化监控、地图定位、事件调度、路线建议、用户认证与云端部署等功能，形成了从数据进入系统到前端展示与业务决策的完整闭环。
+本项目是一个面向本科毕业设计场景的城市路口级智能交通监测与预测系统。系统围绕 11 个固定交通节点构建，集成了交通数据采集、数据存储、短时速度预测、可视化监控、地图定位、事件调度、路径建议、用户认证与云端部署等功能，形成了从数据进入系统到前端展示与业务决策的完整闭环。
 
 当前系统主体功能已经基本完成，适合用于毕业论文撰写、答辩演示和后续轻量级维护。后续主要工作建议集中在前端展示文案清理、演示数据整理、论文截图和答辩材料准备。
 
@@ -143,7 +143,7 @@ traffic-system
 - Dashboard 页面：`frontend/src/pages/Dashboard.tsx`
 - 地图页面：`frontend/src/pages/MapView.tsx`
 - 事件页面：`frontend/src/pages/Incidents.tsx`
-- 路线建议页面：`frontend/src/pages/Route.tsx`
+- 路径建议页面：`frontend/src/pages/Route.tsx`
 - 设置页面：`frontend/src/pages/Settings.tsx`
 - 登录页面：`frontend/src/pages/Login.tsx`
 - 后端入口：`backend/src/index.ts`
@@ -525,7 +525,7 @@ frontend/src/pages/Incidents.tsx
 - 生成的事件记录使用现场上报口吻描述，不再在描述中出现“模拟事件”等标记
 - 后端会自动修复历史数据中的乱码描述，并清理旧记录中类似“模拟事件 #...”的尾部标记
 
-### 8.5 Route 路线建议页
+### 8.5 Route 路径建议页
 
 文件：
 
@@ -966,7 +966,7 @@ mysql -utraffic_user -p traffic < /home/ubuntu/traffic_YYYYMMDD.sql
 - AI 推理服务
 - Dashboard 可视化
 - 地图节点展示与跳转定位
-- Route 路线建议
+- Route 路径建议
 - Incidents 事件完整流程
 - 事件列表搜索、状态筛选和分页
 - 事件描述详情弹窗
@@ -1022,4 +1022,4 @@ mysql -utraffic_user -p traffic < /home/ubuntu/traffic_YYYYMMDD.sql
 
 简短版本：
 
-> 本系统以路口速度数据为核心，结合 LST-GCN 模型实现短时交通状态预测，并通过 Web 前端完成地图展示、趋势监测、路线建议和事件调度，形成了一个可部署、可演示、可解释的智能交通监测与预测平台。
+> 本系统以路口速度数据为核心，结合 LST-GCN 模型实现短时交通状态预测，并通过 Web 前端完成地图展示、趋势监测、路径建议和事件调度，形成了一个可部署、可演示、可解释的智能交通监测与预测平台。
