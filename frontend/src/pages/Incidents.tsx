@@ -2,6 +2,21 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+// import {
+//   Plus,
+//   Search,
+//   AlertTriangle,
+//   CheckCircle2,
+//   Clock,
+//   Filter,
+//   X,
+//   ChevronLeft,
+//   ChevronRight,
+//   Trash2,
+//   Sparkles,
+//   UserRound,
+//   ShieldCheck,
+// } from 'lucide-react';
 import {
   Plus,
   Search,
@@ -13,7 +28,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Trash2,
-  Sparkles,
   UserRound,
   ShieldCheck,
 } from 'lucide-react';
@@ -144,7 +158,7 @@ export default function Incidents() {
   const [currentPage, setCurrentPage] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [roleSubmitting, setRoleSubmitting] = useState(false);
-  const [seeding, setSeeding] = useState(false);
+  // const [seeding, setSeeding] = useState(false);
   const [roleForm, setRoleForm] = useState<{ userId: string; role: '管理员' | '执行者' }>({ userId: '', role: '执行者' });
 
   const [form, setForm] = useState({
@@ -324,18 +338,18 @@ export default function Incidents() {
     }
   };
 
-  const seedMockData = async () => {
-    setSeeding(true);
-    try {
-      await api.post('/api/incidents/mock-seed', { count: 18 });
-      await loadIncidents();
-      showToast('事件记录已生成', 'success');
-    } catch {
-      showToast('事件记录生成失败', 'error');
-    } finally {
-      setSeeding(false);
-    }
-  };
+  // const seedMockData = async () => {
+  //   setSeeding(true);
+  //   try {
+  //     await api.post('/api/incidents/mock-seed', { count: 18 });
+  //     await loadIncidents();
+  //     showToast('事件记录已生成', 'success');
+  //   } catch {
+  //     showToast('事件记录生成失败', 'error');
+  //   } finally {
+  //     setSeeding(false);
+  //   }
+  // };
 
   const openRoleModal = async () => {
     if (!isAdmin) {
