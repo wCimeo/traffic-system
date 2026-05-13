@@ -335,6 +335,19 @@ function parseNodeList(rawValue, fallback = []) {
     return parsed.length ? Array.from(new Set(parsed)) : fallback;
 }
 async function ensurePredictionsTableMigration() {
+    await db_1.default.query(`
+    CREATE TABLE IF NOT EXISTS predictions (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      node_id VARCHAR(10) NOT NULL,
+      predicted_speed FLOAT NOT NULL,
+      predicted_at DATETIME NOT NULL,
+      horizon_minutes INT NOT NULL DEFAULT 15,
+      target_at DATETIME NULL,
+      source_table VARCHAR(64) NULL DEFAULT '${TRAFFIC_SOURCE.readTable}',
+      model_bucket_minutes TINYINT NOT NULL DEFAULT ${(0, trafficWindow_1.getModelBucketMinutes)()},
+      INDEX idx_prediction_horizon_time (horizon_minutes, predicted_at, target_at, node_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
     const [columns] = await db_1.default.query(`SELECT COLUMN_NAME AS name
      FROM INFORMATION_SCHEMA.COLUMNS
      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'predictions'`);

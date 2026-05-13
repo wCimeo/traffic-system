@@ -4,6 +4,7 @@
 使用前修改下方 DB_CONFIG 和 AMAP_KEY
 """
 
+import os
 import time
 import json
 import logging
@@ -11,21 +12,40 @@ import requests
 import pymysql
 from datetime import datetime
 from apscheduler.schedulers.blocking import BlockingScheduler
+from pathlib import Path
+
+
+def load_env():
+    env_path = Path(__file__).resolve().parents[1] / '.env'
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding='utf-8').splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+load_env()
 
 # ─── 配置区 ────────────────────────────────────────────────
-AMAP_KEY = "d8438f907370521caf14d2d8ebfcfa80"
+AMAP_KEY = os.getenv('AMAP_KEY', '').strip()
+REAL_TABLE = os.getenv('TRAFFIC_REAL_TABLE', 'traffic_flow')
+REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
 
 DB_CONFIG = {
-    "host": "localhost",
-    "port": 3306,
-    "user": "root",
-    "password": "123456",
-    "database": "traffic",
+    "host": os.getenv('DB_HOST', 'localhost'),
+    "port": int(os.getenv('DB_PORT', '3306')),
+    "user": os.getenv('DB_USER', 'root'),
+    "password": os.getenv('DB_PASSWORD', '123456'),
+    "database": os.getenv('DB_NAME', 'traffic'),
     "charset": "utf8mb4",
 }
 
 # 采集间隔（秒），高德免费配额建议不低于60
-INTERVAL_SECONDS = 300
+INTERVAL_SECONDS = int(os.getenv('TRAFFIC_REAL_INTERVAL_SECONDS', '300'))
 # ──────────────────────────────────────────────────────────
 
 logging.basicConfig(
@@ -58,6 +78,10 @@ def fetch_traffic(node: dict) -> dict | None:
     调用高德圆形区域路况接口，返回该路口的速度与拥堵状态。
     返回字段：node_id, timestamp, speed, status, raw_level
     """
+    if not AMAP_KEY:
+        log.error("AMAP_KEY 未配置，无法启动真实路况采集")
+        return None
+
     url = "https://restapi.amap.com/v3/traffic/status/circle"
     params = {
         "key": AMAP_KEY,
@@ -109,8 +133,8 @@ def fetch_traffic(node: dict) -> dict | None:
 
 def save_to_db(conn, record: dict):
     """将一条路况记录写入 traffic_flow 表"""
-    sql = """
-        INSERT INTO traffic_flow
+    sql = f"""
+        INSERT INTO `{REAL_TABLE}`
             (node_id, collected_at, speed, congestion_status, road_count)
         VALUES
             (%(node_id)s, %(timestamp)s, %(speed)s, %(status)s, %(road_count)s)
@@ -160,7 +184,7 @@ def update_redis_cache(records: list):
     """把最新一轮采集结果写入Redis缓存"""
     try:
         import redis as redis_client
-        r = redis_client.Redis(host='localhost', port=6379, decode_responses=True)
+        r = redis_client.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
         cache_data = json.dumps(records, default=str)
         r.setex('traffic:latest', 70, cache_data)
         log.info("Redis缓存已更新")
@@ -169,8 +193,8 @@ def update_redis_cache(records: list):
 
 def init_table():
     """首次运行时建表（如果表不存在）"""
-    create_sql = """
-    CREATE TABLE IF NOT EXISTS traffic_flow (
+    create_sql = f"""
+    CREATE TABLE IF NOT EXISTS `{REAL_TABLE}` (
         id            BIGINT AUTO_INCREMENT PRIMARY KEY,
         node_id       VARCHAR(10)    NOT NULL COMMENT '路口编号，如A1',
         collected_at  DATETIME       NOT NULL COMMENT '采集时间',

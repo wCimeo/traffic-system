@@ -16,20 +16,39 @@ import requests
 import pymysql
 from datetime import datetime
 from apscheduler.schedulers.blocking import BlockingScheduler
+from pathlib import Path
+
+
+def load_env():
+    env_path = Path(__file__).resolve().parents[1] / '.env'
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding='utf-8').splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+load_env()
 
 # ─── 配置区 ────────────────────────────────────────────────
-AMAP_KEY = "446d64f34a5fc453ba27bfc323028aeb"
+AMAP_KEY = os.getenv('AMAP_KEY', '').strip()
+REAL_TABLE = os.getenv('TRAFFIC_REAL_TABLE', 'traffic_flow')
+REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
 
 DB_CONFIG = {
-    "host": "localhost",
-    "port": 3306,
-    "user": "root",
-    "password": "123456",
-    "database": "traffic",
+    "host": os.getenv('DB_HOST', 'localhost'),
+    "port": int(os.getenv('DB_PORT', '3306')),
+    "user": os.getenv('DB_USER', 'root'),
+    "password": os.getenv('DB_PASSWORD', '123456'),
+    "database": os.getenv('DB_NAME', 'traffic'),
     "charset": "utf8mb4",
 }
 
-INTERVAL_SECONDS = 300
+INTERVAL_SECONDS = int(os.getenv('TRAFFIC_REAL_INTERVAL_SECONDS', '300'))
 
 # 两个矩形区域，每个对角线控制在10公里以内
 RECTANGLES = [
@@ -81,6 +100,10 @@ def fetch_rectangle_traffic() -> list:
     分两个矩形区域请求，合并路段数据返回。
     每次采集消耗2次API配额。
     """
+    if not AMAP_KEY:
+        log.error("AMAP_KEY 未配置，无法启动真实路况采集")
+        return []
+
     all_roads = []
     for rect in RECTANGLES:
         url = "https://restapi.amap.com/v3/traffic/status/rectangle"
@@ -183,8 +206,8 @@ def match_roads_to_nodes(roads: list) -> dict:
 
 
 def save_to_db(conn, record: dict):
-    sql = """
-        INSERT INTO traffic_flow
+    sql = f"""
+        INSERT INTO `{REAL_TABLE}`
             (node_id, collected_at, speed, congestion_status, road_count)
         VALUES
             (%(node_id)s, %(timestamp)s, %(speed)s, %(status)s, %(road_count)s)
@@ -197,12 +220,33 @@ def save_to_db(conn, record: dict):
 def update_redis_cache(records: list):
     try:
         import redis as redis_client
-        r = redis_client.Redis(host='localhost', port=6379, decode_responses=True)
+        r = redis_client.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
         cache_data = json.dumps(records, default=str)
         r.setex('traffic:latest', 70, cache_data)
         log.info("Redis缓存已更新")
     except Exception as e:
         log.warning(f"Redis缓存更新失败（不影响采集）: {e}")
+
+
+def init_table():
+    create_sql = f"""
+    CREATE TABLE IF NOT EXISTS `{REAL_TABLE}` (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        node_id VARCHAR(10) NOT NULL,
+        collected_at DATETIME NOT NULL,
+        speed FLOAT NOT NULL,
+        congestion_status TINYINT NOT NULL,
+        road_count TINYINT NOT NULL,
+        INDEX idx_node_time (node_id, collected_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """
+    conn = pymysql.connect(**DB_CONFIG)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(create_sql)
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def collect_once():
@@ -269,6 +313,7 @@ def collect_once():
 
 
 if __name__ == "__main__":
+    init_table()
     # 先跑一次验证
     collect_once()
 

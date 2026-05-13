@@ -12,13 +12,16 @@ declare global {
   }
 }
 
-if (typeof window !== 'undefined') {
+const AMAP_KEY = String(import.meta.env.VITE_AMAP_KEY || '').trim();
+const AMAP_SECURITY_JS_CODE = String(import.meta.env.VITE_AMAP_SECURITY_JS_CODE || '').trim();
+const AMAP_READY = Boolean(AMAP_KEY && AMAP_SECURITY_JS_CODE);
+
+if (typeof window !== 'undefined' && AMAP_SECURITY_JS_CODE) {
   window._AMapSecurityConfig = {
-    securityJsCode: '8cb4c55595d659259cf0f9f771afe037',
+    securityJsCode: AMAP_SECURITY_JS_CODE,
   };
 }
 
-const AMAP_KEY = '8943e8243755045a43fa3bf25bf42aef';
 const AMAP_SCRIPT_ID = 'amap-js-sdk';
 const AMAP_SCRIPT_URL = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}`;
 let amapSdkPromise: Promise<void> | null = null;
@@ -73,6 +76,10 @@ const waitForContainerReady = (container: HTMLDivElement) =>
 
 const loadAMapSdkOnce = () =>
   new Promise<void>((resolve, reject) => {
+    if (!AMAP_READY) {
+      reject(new Error('缺少高德地图配置，请在 frontend/.env 中设置 VITE_AMAP_KEY 和 VITE_AMAP_SECURITY_JS_CODE'));
+      return;
+    }
     if (window.AMap) {
       resolve();
       return;
