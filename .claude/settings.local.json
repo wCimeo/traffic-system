@@ -4,7 +4,8 @@
       "Read(//d/d/Projects/VS_Code/traffic-system/backend/**)",
       "Bash(/d/Environment/miniconda3/envs/thesis/python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('scripts',{}\\), indent=2\\)\\)\")",
       "Bash(npm --version)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(python -c ' *)"
     ]
   }
 }
